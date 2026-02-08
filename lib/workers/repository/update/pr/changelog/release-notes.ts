@@ -30,6 +30,17 @@ markdown.enable(['heading', 'lheading', 'fence']);
 
 const repositoriesToSkipMdFetching = ['facebook/react-native'];
 
+function getChangelogVersion(
+  version: string,
+  extractChangelogVersion: string | undefined,
+): string {
+  if (!extractChangelogVersion) {
+    return version;
+  }
+  const regex = regEx(extractChangelogVersion);
+  return regex.exec(version)?.groups?.version ?? version;
+}
+
 export async function getReleaseList(
   project: ChangeLogProject,
   release: ChangeLogRelease,
@@ -150,6 +161,10 @@ export async function getReleaseNotes(
 ): Promise<ChangeLogNotes | null> {
   const { packageName, depName, repository } = project;
   const { version, gitRef } = release;
+  const changelogVersion = getChangelogVersion(
+    version,
+    config.extractChangelogVersion,
+  );
   // TODO: types (#22198)
   logger.trace(
     `getReleaseNotes(${repository}, ${version}, ${packageName!}, ${depName!})`,
@@ -161,15 +176,15 @@ export async function getReleaseNotes(
   let matchedRelease = getExactReleaseMatch(
     packageName!,
     depName!,
-    version,
+    changelogVersion,
     releases,
   );
   if (isUndefined(matchedRelease)) {
     // no exact match of a release then check other cases
     matchedRelease = releases.find(
       (r) =>
-        r.tag === version ||
-        r.tag === `v${version}` ||
+        r.tag === changelogVersion ||
+        r.tag === `v${changelogVersion}` ||
         r.tag === gitRef ||
         r.tag === `v${gitRef}`,
     );
@@ -179,7 +194,7 @@ export async function getReleaseNotes(
     matchedRelease = releases.find((r) => {
       const extractedVersion = extractVersionRegEx.exec(r.tag!)?.groups
         ?.version;
-      return version === extractedVersion;
+      return changelogVersion === extractedVersion;
     });
   }
   releaseNotes = await releaseNotesResult(matchedRelease, project);
@@ -349,9 +364,14 @@ export function getReleaseNotesMdFile(
 export async function getReleaseNotesMd(
   project: ChangeLogProject,
   release: ChangeLogRelease,
+  config?: BranchUpgradeConfig,
 ): Promise<ChangeLogNotes | null> {
   const { baseUrl, repository, packageName } = project;
   const version = release.version;
+  const changelogVersion = getChangelogVersion(
+    version,
+    config?.extractChangelogVersion,
+  );
   logger.trace(`getReleaseNotesMd(${repository}, ${version})`);
 
   if (shouldSkipChangelogMd(repository)) {
@@ -396,7 +416,7 @@ export async function getReleaseNotesMd(
           const url = `${notesSourceUrl}#${mdHeadingLink}`;
           // Look for version in title
           for (const word of title) {
-            if (word.includes(version) && !isHttpUrl(word)) {
+            if (word.includes(changelogVersion) && !isHttpUrl(word)) {
               logger.trace({ body }, 'Found release notes for v' + version);
               return {
                 body: await linkifyBody(project, body),
@@ -414,7 +434,7 @@ export async function getReleaseNotesMd(
               bodyLines.some(
                 (line) =>
                   line.includes(packageName) &&
-                  line.includes(version) &&
+                  line.includes(changelogVersion) &&
                   !isHttpUrl(line),
               )
             ) {
@@ -489,7 +509,7 @@ export async function addReleaseNotes(
     let releaseNotes: ChangeLogNotes | null | undefined;
     const cacheKey = `${cacheKeyPrefix}:${v.version}`;
     releaseNotes = await packageCache.get(cacheNamespace, cacheKey);
-    releaseNotes ??= await getReleaseNotesMd(input.project, v);
+    releaseNotes ??= await getReleaseNotesMd(input.project, v, config);
     releaseNotes ??= await getReleaseNotes(input.project, v, config);
 
     // If there is no release notes, at least try to show the compare URL

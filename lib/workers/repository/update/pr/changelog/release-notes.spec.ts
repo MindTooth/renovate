@@ -1099,6 +1099,66 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
         body: 'some body\n',
       });
     });
+
+    it('uses extractChangelogVersion to strip v prefix', async () => {
+      githubReleasesMock.mockResolvedValueOnce([
+        {
+          version: 'v1.0.0',
+          releaseTimestamp: '2020-01-01' as Timestamp,
+          id: 1,
+          url: 'https://github.com/some/other-repository/releases/v1.0.0',
+          name: 'some/dep',
+          description: 'some body',
+        },
+      ]);
+      const res = await getReleaseNotes(
+        {
+          ...githubProject,
+          repository: 'some/other-repository',
+          packageName: 'other',
+        },
+        partial<ChangeLogRelease>({
+          version: '1.0.0',
+          gitRef: '1.0.0',
+        }),
+        partial<BranchUpgradeConfig>({
+          extractChangelogVersion: '^v?(?<version>.*)$',
+        }),
+      );
+      expect(res).toMatchObject({
+        url: 'https://github.com/some/other-repository/releases/v1.0.0',
+      });
+    });
+
+    it('falls back to original version when extractChangelogVersion does not match', async () => {
+      githubReleasesMock.mockResolvedValueOnce([
+        {
+          version: '1.0.0',
+          releaseTimestamp: '2020-01-01' as Timestamp,
+          id: 1,
+          url: 'https://github.com/some/other-repository/releases/1.0.0',
+          name: 'some/dep',
+          description: 'some body',
+        },
+      ]);
+      const res = await getReleaseNotes(
+        {
+          ...githubProject,
+          repository: 'some/other-repository',
+          packageName: 'other',
+        },
+        partial<ChangeLogRelease>({
+          version: '1.0.0',
+          gitRef: '1.0.0',
+        }),
+        partial<BranchUpgradeConfig>({
+          extractChangelogVersion: '^xyz-(?<version>.*)$',
+        }),
+      );
+      expect(res).toMatchObject({
+        url: 'https://github.com/some/other-repository/releases/1.0.0',
+      });
+    });
   });
 
   describe('getReleaseNotesMd()', () => {
@@ -1618,6 +1678,37 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
 
       it('15.3.0 is not equal to 15.2.0', () => {
         expect(versionOneNotes).not.toMatchObject(versionTwoNotes);
+      });
+    });
+
+    it('uses extractChangelogVersion for heading matching', async () => {
+      httpMock
+        .scope('https://api.github.com')
+        .get('/repos/angular/angular.js')
+        .reply(200)
+        .get('/repos/angular/angular.js/git/trees/HEAD')
+        .reply(200, githubTreeResponse)
+        .get('/repos/angular/angular.js/git/blobs/abcd')
+        .reply(200, {
+          content: toBase64(angularJsChangelogMd),
+        });
+      const res = await getReleaseNotesMd(
+        {
+          ...githubProject,
+          repository: 'angular/angular.js',
+        },
+        partial<ChangeLogRelease>({
+          version: 'v1.6.9',
+          gitRef: 'v1.6.9',
+        }),
+        partial<BranchUpgradeConfig>({
+          extractChangelogVersion: '^v?(?<version>.*)$',
+        }),
+      );
+      expect(res).toMatchObject({
+        notesSourceUrl:
+          'https://github.com/angular/angular.js/blob/HEAD/CHANGELOG.md',
+        url: 'https://github.com/angular/angular.js/blob/HEAD/CHANGELOG.md#169-fiery-basilisk-2018-02-02',
       });
     });
 

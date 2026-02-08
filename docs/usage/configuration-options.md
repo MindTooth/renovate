@@ -1681,6 +1681,29 @@ This is particularly useful when combined with `assigneesSampleSize` and `assign
 See [shareable config presets](./config-presets.md) for details.
 Learn how to use presets by reading the [Key concepts, Presets](./key-concepts/presets.md#how-to-use-presets) page.
 
+## extractChangelogVersion
+
+Use this config option to transform the version string **only for changelog matching**, without affecting version resolution.
+This is useful when the changelog source (e.g. GitHub releases) uses a different version format than the datasource you're tracking.
+
+For example, if you track a Docker image with version `0.53.0` but the project's GitHub releases are tagged `v0.53.0`, Renovate may fail to match the changelog entry.
+You can use `extractChangelogVersion` to strip or add prefixes for matching:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchPackageNames": ["timberio/vector"],
+      "extractChangelogVersion": "^v?(?<version>.*)$"
+    }
+  ]
+}
+```
+
+The above regex extracts the version from both `v0.53.0` (→ `0.53.0`) and `0.53.0` (→ `0.53.0`), allowing changelog entries to match regardless of `v` prefix differences.
+
+Unlike [`extractVersion`](#extractversion), which transforms versions at the datasource level and affects version resolution globally, `extractChangelogVersion` only affects how Renovate matches versions to changelog entries and release notes.
+
 ## extractVersion
 
 Only use this config option when the raw version strings from the datasource do not match the expected format that you need in your package file.

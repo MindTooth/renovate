@@ -1328,6 +1328,15 @@ const options: Readonly<RenovateOptions>[] = [
     env: false,
   },
   {
+    name: 'extractChangelogVersion',
+    description:
+      'A regex (`re2`) with a named capture group `version` to extract the version string for changelog matching.',
+    type: 'string',
+    format: 'regex',
+    cli: false,
+    env: false,
+  },
+  {
     name: 'versionCompatibility',
     description:
       'A regex (`re2`) with named capture groups to show how version and compatibility are split from a raw version string.',
