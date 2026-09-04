@@ -85,10 +85,11 @@ All available options:
 }
 ```
 
-`changelogContent` is Markdown for a specific release. When Renovate selects
-that release, it embeds the content in the pull request and uses the release's
-`changelogUrl`, when present, as the source link. Renovate does not combine
-content from intermediate releases.
+`changelogContent` is Markdown for a specific release. Renovate embeds the
+content for every release in the update range, ordered from newest to oldest,
+and uses each release's `changelogUrl`, when present, as its source link.
+Releases without `changelogContent` are omitted from the release notes without
+affecting the update.
 
 ### Debugging
 

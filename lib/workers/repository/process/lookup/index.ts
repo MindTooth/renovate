@@ -978,19 +978,25 @@ export async function lookupUpdates(
       );
     }
 
-    const release =
-      res.updates.length > 0
-        ? (dependency?.releases.find(
-            (r) => r.version === res.updates[0].newValue,
+    const changelogReleases = dependency?.releases.filter((release) =>
+      isNonEmptyString(release.changelogContent),
+    );
+    if (changelogReleases?.length) {
+      for (const update of res.updates) {
+        update.changelogReleases = changelogReleases;
+
+        const release =
+          dependency?.releases.find(
+            (release) => release.version === update.newValue,
           ) ??
           dependency?.releases.find(
-            (r) => r.version === res.updates[0].newVersion,
-          ))
-        : null;
-
-    if (release?.changelogContent) {
-      res.changelogContent = release.changelogContent;
-      res.changelogUrl = release.changelogUrl;
+            (release) => release.version === update.newVersion,
+          );
+        if (release?.changelogContent) {
+          update.changelogContent = release.changelogContent;
+          update.changelogUrl = release.changelogUrl;
+        }
+      }
     }
   } catch (err) /* istanbul ignore next */ {
     if (err instanceof ExternalHostError) {

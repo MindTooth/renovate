@@ -21,7 +21,7 @@ import type {
 import type { FileChange } from '../../util/git/types.ts';
 import type { MergeConfidence } from '../../util/merge-confidence/types.ts';
 import type { Timestamp } from '../../util/timestamp.ts';
-import type { RegistryStrategy } from '../datasource/index.ts';
+import type { RegistryStrategy, Release } from '../datasource/index.ts';
 import type { CustomExtractConfig } from './custom/types.ts';
 
 export interface ManagerData<T> {
@@ -128,6 +128,9 @@ export interface LookupUpdate {
   mergeConfidenceLevel?: MergeConfidence | undefined;
   userStrings?: Record<string, string>;
   checksumUrl?: string;
+  changelogContent?: string;
+  changelogReleases?: Release[];
+  changelogUrl?: string;
   downloadUrl?: string;
   releaseTimestamp?: Timestamp;
   newVersionAgeInDays?: number;
