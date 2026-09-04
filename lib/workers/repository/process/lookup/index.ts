@@ -988,10 +988,10 @@ export async function lookupUpdates(
     const release =
       res.updates.length > 0
         ? (dependency?.releases.find(
-            (release) => release.version === res.updates[0].newValue,
+            (r) => r.version === res.updates[0].newValue,
           ) ??
           dependency?.releases.find(
-            (release) => release.version === res.updates[0].newVersion,
+            (r) => r.version === res.updates[0].newVersion,
           ))
         : null;
 
