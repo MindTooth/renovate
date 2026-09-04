@@ -70,6 +70,7 @@ All available options:
       "version": "v1.0.0",
       "isDeprecated": true,
       "releaseTimestamp": "2022-12-24T18:21Z",
+      "changelogContent": "Release notes in Markdown.",
       "changelogUrl": "https://github.com/demo-org/demo/blob/main/CHANGELOG.md#v0710",
       "sourceUrl": "https://github.com/demo-org/demo",
       "sourceDirectory": "monorepo/folder",
@@ -83,6 +84,11 @@ All available options:
   "homepage": "https://demo.org"
 }
 ```
+
+`changelogContent` is Markdown for a specific release. When Renovate selects
+that release, it embeds the content in the pull request and uses the release's
+`changelogUrl`, when present, as the source link. Renovate does not combine
+content from intermediate releases.
 
 ### Debugging
 
