@@ -2,6 +2,7 @@ import type {
   RenovateConfig,
   ValidationMessage,
 } from '../../../../config/types.ts';
+import type { Release } from '../../../../modules/datasource/types.ts';
 import type {
   LookupUpdate,
   RangeConfig,
@@ -62,6 +63,9 @@ export interface LookupUpdateConfig
 
 export interface UpdateResult {
   sourceDirectory?: string;
+  changelogContent?: string;
+  changelogReleases?: Release[];
+  changelogUrl?: string;
   dependencyUrl?: string;
   homepage?: string;
   deprecationMessage?: string;

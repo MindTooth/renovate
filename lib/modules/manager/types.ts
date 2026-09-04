@@ -128,9 +128,6 @@ export interface LookupUpdate {
   mergeConfidenceLevel?: MergeConfidence | undefined;
   userStrings?: Record<string, string>;
   checksumUrl?: string;
-  changelogContent?: string;
-  changelogReleases?: Release[];
-  changelogUrl?: string;
   downloadUrl?: string;
   releaseTimestamp?: Timestamp;
   newVersionAgeInDays?: number;
@@ -173,6 +170,7 @@ export interface PackageDependency<
   packageFileVersion?: string;
   gitRef?: boolean;
   sourceUrl?: string | null;
+  changelogReleases?: Release[];
   pinDigests?: boolean;
   currentRawValue?: string;
   major?: { enabled?: boolean };

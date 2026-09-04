@@ -6651,6 +6651,20 @@ describe('workers/repository/process/lookup/index', () => {
       ).unwrapOrThrow();
 
       expect(res).toEqual({
+        changelogContent: 'testContent',
+        changelogReleases: [
+          {
+            changelogContent: 'intermediateContent',
+            changelogUrl: 'http://intermediateChangelogUrl',
+            version: '8.0.1',
+          },
+          {
+            changelogContent: 'testContent',
+            changelogUrl: 'http://testChangelogUrl',
+            version: '8.1.0',
+          },
+        ],
+        changelogUrl: 'http://testChangelogUrl',
         currentVersion: '8.0.0',
         fixedVersion: '8.0.0',
         isSingleVersion: true,
@@ -6660,20 +6674,6 @@ describe('workers/repository/process/lookup/index', () => {
           {
             bucket: 'non-major',
             isBreaking: false,
-            changelogContent: 'testContent',
-            changelogReleases: [
-              {
-                changelogContent: 'intermediateContent',
-                changelogUrl: 'http://intermediateChangelogUrl',
-                version: '8.0.1',
-              },
-              {
-                changelogContent: 'testContent',
-                changelogUrl: 'http://testChangelogUrl',
-                version: '8.1.0',
-              },
-            ],
-            changelogUrl: 'http://testChangelogUrl',
             newMajor: 8,
             newMinor: 1,
             newPatch: 0,
@@ -6711,6 +6711,15 @@ describe('workers/repository/process/lookup/index', () => {
       ).unwrapOrThrow();
 
       expect(res).toEqual({
+        changelogContent: 'testContent',
+        changelogReleases: [
+          {
+            changelogContent: 'testContent',
+            changelogUrl: 'http://testChangelogUrl',
+            version: '8.1.0',
+          },
+        ],
+        changelogUrl: 'http://testChangelogUrl',
         currentVersion: '8.0.0',
         isSingleVersion: false,
         registryUrl: 'https://index.docker.io',
@@ -6720,15 +6729,6 @@ describe('workers/repository/process/lookup/index', () => {
             bucket: 'non-major',
             isBreaking: false,
             isRange: true,
-            changelogContent: 'testContent',
-            changelogReleases: [
-              {
-                changelogContent: 'testContent',
-                changelogUrl: 'http://testChangelogUrl',
-                version: '8.1.0',
-              },
-            ],
-            changelogUrl: 'http://testChangelogUrl',
             newMajor: 8,
             newMinor: 1,
             newPatch: 0,
@@ -6768,22 +6768,22 @@ describe('workers/repository/process/lookup/index', () => {
       ).unwrapOrThrow();
 
       expect(res.updates).toHaveLength(1);
+      expect(res.changelogReleases).toEqual([
+        {
+          changelogContent: 'intermediateContent',
+          changelogUrl: 'http://intermediateChangelogUrl',
+          version: '8.1.0',
+        },
+      ]);
       expect(res.updates[0]).toMatchObject({
-        changelogReleases: [
-          {
-            changelogContent: 'intermediateContent',
-            changelogUrl: 'http://intermediateChangelogUrl',
-            version: '8.1.0',
-          },
-        ],
         newValue: '8.2.0',
         newVersion: '8.2.0',
       });
-      expect(res.updates[0].changelogContent).toBeUndefined();
-      expect(res.updates[0].changelogUrl).toBeUndefined();
+      expect(res.changelogContent).toBeUndefined();
+      expect(res.changelogUrl).toBeUndefined();
     });
 
-    it('attaches changelog releases to every generated update', async () => {
+    it('stores changelog releases once when generating multiple updates', async () => {
       config.currentValue = '8.0.0';
       config.packageName = 'node';
       config.datasource = DockerDatasource.id;
@@ -6804,33 +6804,29 @@ describe('workers/repository/process/lookup/index', () => {
         ],
       });
 
-      const { updates } = await Result.wrap(
+      const res = await Result.wrap(
         lookup.lookupUpdates(config),
       ).unwrapOrThrow();
 
-      expect(updates).toHaveLength(2);
-      for (const update of updates) {
-        expect(update.changelogReleases).toEqual([
-          {
-            changelogContent: 'minorContent',
-            version: '8.1.0',
-          },
-          {
-            changelogContent: 'majorContent',
-            version: '9.0.0',
-          },
-        ]);
-      }
-      expect(updates).toEqual([
-        expect.objectContaining({
+      expect(res.changelogContent).toBe('minorContent');
+      expect(res.changelogReleases).toEqual([
+        {
           changelogContent: 'minorContent',
-          newVersion: '8.1.0',
-        }),
-        expect.objectContaining({
+          version: '8.1.0',
+        },
+        {
           changelogContent: 'majorContent',
-          newVersion: '9.0.0',
-        }),
+          version: '9.0.0',
+        },
       ]);
+      expect(res.updates).toHaveLength(2);
+      expect(res.updates.map(({ newVersion }) => newVersion)).toEqual([
+        '8.1.0',
+        '9.0.0',
+      ]);
+      for (const update of res.updates) {
+        expect(update).not.toHaveProperty('changelogReleases');
+      }
     });
   });
 });
