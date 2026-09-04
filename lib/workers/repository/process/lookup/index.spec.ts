@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 52434)
-Total output lines: 6836
-
 import { codeBlock } from 'common-tags';
 import { Fixtures } from '~test/fixtures.ts';
 import * as httpMock from '~test/http-mock.ts';
@@ -3266,7 +3263,341 @@ describe('workers/repository/process/lookup/index', () => {
       config.datasource = NpmDatasource.id;
       httpMock
         .scope(npmDefaultRegistryUrl)
-        .get('/@t…2434 tokens truncated…qual([
+        .get('/@types%2Fhelmet')
+        .reply(200, helmetJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toBeEmptyArray();
+    });
+
+    it('should treat zero zero caret ranges as pinned', async () => {
+      config.rangeStrategy = 'replace';
+      config.currentValue = '^0.0.34';
+      config.packageName = '@types/helmet';
+      config.datasource = NpmDatasource.id;
+      httpMock
+        .scope(npmDefaultRegistryUrl)
+        .get('/@types%2Fhelmet')
+        .reply(200, helmetJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'non-major',
+          isBreaking: true,
+          isRange: true,
+          newMajor: 0,
+          newMinor: 0,
+          newPatch: 35,
+          newValue: '^0.0.35',
+          newVersion: '0.0.35',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: '2017-04-27T16:59:06.479Z' as Timestamp,
+          updateType: 'patch',
+          hasAttestation: false,
+        },
+      ]);
+    });
+
+    it('should downgrade from missing versions', async () => {
+      config.currentValue = '1.16.1';
+      config.packageName = 'coffeelint';
+      config.datasource = NpmDatasource.id;
+      config.rollbackPrs = true;
+      httpMock
+        .scope(npmDefaultRegistryUrl)
+        .get('/coffeelint')
+        .reply(200, coffeelintJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'rollback',
+          newMajor: 1,
+          newValue: '1.16.0',
+          newVersion: '1.16.0',
+          registryUrl: undefined,
+          updateType: 'rollback',
+          prBodyNotes: expect.arrayContaining([
+            expect.stringContaining(
+              'The version of `coffeelint` in use (`1.16.1`)',
+            ),
+          ]),
+        },
+      ]);
+    });
+
+    it('should upgrade to only one major', async () => {
+      config.currentValue = '1.0.0';
+      config.packageName = 'webpack';
+      config.datasource = NpmDatasource.id;
+      httpMock
+        .scope(npmDefaultRegistryUrl)
+        .get('/webpack')
+        .reply(200, webpackJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'non-major',
+          isBreaking: false,
+          newMajor: 1,
+          newMinor: 15,
+          newPatch: 0,
+          newValue: '1.15.0',
+          newVersion: '1.15.0',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: expect.any(String),
+          updateType: 'minor',
+          hasAttestation: false,
+        },
+        {
+          bucket: 'major',
+          isBreaking: true,
+          newMajor: 3,
+          newMinor: 8,
+          newPatch: 1,
+          newValue: '3.8.1',
+          newVersion: '3.8.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: expect.any(String),
+          updateType: 'major',
+          hasAttestation: false,
+        },
+      ]);
+    });
+
+    it('should upgrade to two majors', async () => {
+      config.currentValue = '1.0.0';
+      config.separateMultipleMajor = true;
+      config.packageName = 'webpack';
+      config.datasource = NpmDatasource.id;
+      httpMock
+        .scope(npmDefaultRegistryUrl)
+        .get('/webpack')
+        .reply(200, webpackJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'non-major',
+          isBreaking: false,
+          newMajor: 1,
+          newMinor: 15,
+          newPatch: 0,
+          newValue: '1.15.0',
+          newVersion: '1.15.0',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: expect.any(String),
+          updateType: 'minor',
+          hasAttestation: false,
+        },
+        {
+          bucket: 'v2',
+          isBreaking: true,
+          newMajor: 2,
+          newMinor: 7,
+          newPatch: 0,
+          newValue: '2.7.0',
+          newVersion: '2.7.0',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: expect.any(String),
+          updateType: 'major',
+          hasAttestation: false,
+        },
+        {
+          bucket: 'v3',
+          isBreaking: true,
+
+          newMajor: 3,
+          newMinor: 8,
+          newPatch: 1,
+          newValue: '3.8.1',
+          newVersion: '3.8.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: expect.any(String),
+          updateType: 'major',
+          hasAttestation: false,
+        },
+      ]);
+    });
+
+    it('should upgrade to 16 minors', async () => {
+      config.currentValue = '1.0.0';
+      config.separateMultipleMinor = true;
+      config.packageName = 'webpack';
+      config.datasource = NpmDatasource.id;
+      httpMock
+        .scope(npmDefaultRegistryUrl)
+        .get('/webpack')
+        .reply(200, webpackJson);
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+      expect(updates).toHaveLength(16);
+    });
+
+    it('does not jump  major unstable', async () => {
+      config.currentValue = '^4.4.0-canary.3';
+      config.rangeStrategy = 'replace';
+      config.packageName = 'next';
+      config.datasource = NpmDatasource.id;
+      httpMock.scope(npmDefaultRegistryUrl).get('/next').reply(200, nextJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toBeEmptyArray();
+    });
+
+    it('supports in-range caret updates', async () => {
+      config.rangeStrategy = 'bump';
+      config.currentValue = '^1.0.0';
+      config.packageName = 'q';
+      config.datasource = NpmDatasource.id;
+      httpMock.scope(npmDefaultRegistryUrl).get('/q').reply(200, qJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'non-major',
+          isBreaking: false,
+          isBump: true,
+          isRange: true,
+          newMajor: 1,
+          newMinor: 4,
+          newPatch: 1,
+          newValue: '^1.4.1',
+          newVersion: '1.4.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: '2015-05-17T04:25:07.299Z' as Timestamp,
+          updateType: 'minor',
+          hasAttestation: false,
+        },
+      ]);
+    });
+
+    it('supports in-range tilde updates', async () => {
+      config.rangeStrategy = 'bump';
+      config.currentValue = '~1.0.0';
+      config.packageName = 'q';
+      config.separateMinorPatch = true;
+      config.datasource = NpmDatasource.id;
+      httpMock.scope(npmDefaultRegistryUrl).get('/q').reply(200, qJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'patch',
+          isBreaking: false,
+          isBump: true,
+          isRange: true,
+          newMajor: 1,
+          newMinor: 0,
+          newPatch: 1,
+          newValue: '~1.0.1',
+          newVersion: '1.0.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: '2014-03-11T18:47:17.560Z' as Timestamp,
+          updateType: 'patch',
+          hasAttestation: false,
+        },
+        {
+          bucket: 'minor',
+          isBreaking: false,
+          isRange: true,
+          newMajor: 1,
+          newMinor: 4,
+          newPatch: 1,
+          newValue: '~1.4.1',
+          newVersion: '1.4.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: '2015-05-17T04:25:07.299Z' as Timestamp,
+          updateType: 'minor',
+          hasAttestation: false,
+        },
+      ]);
+    });
+
+    it('supports in-range tilde patch updates', async () => {
+      config.rangeStrategy = 'bump';
+      config.currentValue = '~1.0.0';
+      config.packageName = 'q';
+      config.separateMinorPatch = true;
+      config.datasource = NpmDatasource.id;
+      httpMock.scope(npmDefaultRegistryUrl).get('/q').reply(200, qJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
+        {
+          bucket: 'patch',
+          hasAttestation: false,
+          isBreaking: false,
+          isBump: true,
+          isRange: true,
+          newMajor: 1,
+          newMinor: 0,
+          newPatch: 1,
+          newValue: '~1.0.1',
+          newVersion: '1.0.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: '2014-03-11T18:47:17.560Z' as Timestamp,
+          updateType: 'patch',
+        },
+        {
+          bucket: 'minor',
+          hasAttestation: false,
+          isBreaking: false,
+          isRange: true,
+          newMajor: 1,
+          newMinor: 4,
+          newPatch: 1,
+          newValue: '~1.4.1',
+          newVersion: '1.4.1',
+          newVersionAgeInDays: expect.any(Number),
+          releaseTimestamp: '2015-05-17T04:25:07.299Z' as Timestamp,
+          updateType: 'minor',
+        },
+      ]);
+    });
+
+    it('supports in-range gte updates', async () => {
+      config.rangeStrategy = 'bump';
+      config.currentValue = '>=1.0.0';
+      config.packageName = 'q';
+      config.datasource = NpmDatasource.id;
+      httpMock.scope(npmDefaultRegistryUrl).get('/q').reply(200, qJson);
+
+      const { updates } = await Result.wrap(
+        lookup.lookupUpdates(config),
+      ).unwrapOrThrow();
+
+      expect(updates).toEqual([
         {
           bucket: 'non-major',
           hasAttestation: false,
