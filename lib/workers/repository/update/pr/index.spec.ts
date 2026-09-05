@@ -922,6 +922,59 @@ describe('workers/repository/update/pr/index', () => {
         });
       });
 
+      it('retains distinct embedded changelogs sharing a release URL', async () => {
+        const { embedChangelogs: actualEmbedChangelogs } =
+          await vi.importActual<typeof import('../../changelog/index.ts')>(
+            '../../changelog/index.ts',
+          );
+        vi.mocked(embedChangelogs).mockImplementationOnce(
+          actualEmbedChangelogs,
+        );
+        platform.createPr.mockResolvedValueOnce(pr);
+        const changelogUrl = 'https://example.com/releases/1.1.0';
+        const upgrades = ['alpha', 'beta'].map((depName) =>
+          partial<BranchUpgradeConfig>({
+            depName,
+            packageName: depName,
+            manager: 'npm',
+            repository: 'some/repo',
+            sourceUrl: 'https://github.com/example/monorepo',
+            sourceDirectory: depName,
+            versioning: 'npm',
+            currentVersion: '1.0.0',
+            newVersion: '1.1.0',
+            fetchChangeLogs: 'pr',
+            changelogReleases: [
+              {
+                version: '1.1.0',
+                changelogContent: `${depName} release notes`,
+                changelogUrl,
+              },
+            ],
+          }),
+        );
+
+        const res = await ensurePr({ ...config, upgrades });
+
+        expect(res).toEqual({ type: 'with-pr', pr });
+        const [[bodyConfig]] = prBody.getPrBody.mock.calls;
+        expect(bodyConfig.upgrades).toMatchObject(
+          ['alpha', 'beta'].map((depName) => ({
+            depName,
+            hasReleaseNotes: true,
+            releases: [
+              {
+                version: '1.1.0',
+                releaseNotes: {
+                  body: `${depName} release notes`,
+                  url: changelogUrl,
+                },
+              },
+            ],
+          })),
+        );
+      });
+
       it('handles missing GitHub token', async () => {
         platform.createPr.mockResolvedValueOnce(pr);
 

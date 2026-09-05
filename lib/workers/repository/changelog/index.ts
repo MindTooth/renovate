@@ -37,7 +37,7 @@ function createChangelogRelease(
     date: date!,
     releaseNotes: {
       body: changelogContent,
-      notesSourceUrl: changelogUrl!,
+      notesSourceUrl: undefined!,
       url: changelogUrl!,
     },
     gitRef: gitRef!,

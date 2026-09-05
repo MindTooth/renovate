@@ -187,7 +187,7 @@ describe('workers/repository/changelog/index', () => {
           gitRef: undefined,
           releaseNotes: {
             body: 'targetContent',
-            notesSourceUrl: 'https://example.com/releases/1.3.0',
+            notesSourceUrl: undefined,
             url: 'https://example.com/releases/1.3.0',
           },
           version: '1.3.0',
@@ -199,7 +199,7 @@ describe('workers/repository/changelog/index', () => {
           gitRef: 'release-1.1.0',
           releaseNotes: {
             body: 'intermediateContent',
-            notesSourceUrl: 'https://example.com/releases/1.1.0',
+            notesSourceUrl: undefined,
             url: 'https://example.com/releases/1.1.0',
           },
           version: '1.1.0',
@@ -232,7 +232,7 @@ describe('workers/repository/changelog/index', () => {
       expect.objectContaining({
         releaseNotes: {
           body: 'intermediateContent',
-          notesSourceUrl: 'https://example.com/releases/1.1.0',
+          notesSourceUrl: undefined,
           url: 'https://example.com/releases/1.1.0',
         },
         version: '1.1.0',
