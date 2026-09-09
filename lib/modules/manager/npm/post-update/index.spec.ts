@@ -1,4 +1,3 @@
-// TODO: add tests
 import upath from 'upath';
 import { Fixtures } from '~test/fixtures.ts';
 import { fs, git, logger, partial, scm } from '~test/util.ts';
@@ -337,6 +336,61 @@ describe('modules/manager/npm/post-update/index', () => {
       );
     });
 
+    it('snapshots a shared .npmrc only once', async () => {
+      fs.readLocalFile.mockResolvedValue('original');
+      const originalNpmrcFiles = new Map<string, string>();
+
+      await writeExistingFiles(
+        updateConfig,
+        {
+          npm: [
+            {
+              packageFile: 'packages/core/package.json',
+              npmrc: 'first',
+              managerData: {},
+            },
+            {
+              packageFile: 'packages/core/package.json',
+              npmrc: 'second',
+              managerData: {},
+            },
+          ],
+        },
+        originalNpmrcFiles,
+      );
+
+      expect(fs.readLocalFile).toHaveBeenCalledExactlyOnceWith(
+        'packages/core/.npmrc',
+        'utf8',
+      );
+      expect(originalNpmrcFiles).toEqual(
+        new Map([['packages/core/.npmrc', 'original']]),
+      );
+    });
+
+    it('logs and continues if a temporary .npmrc cannot be prepared', async () => {
+      const err = new Error('read failed');
+      fs.readLocalFile.mockRejectedValueOnce(err);
+
+      await expect(
+        writeExistingFiles(updateConfig, {
+          npm: [
+            {
+              packageFile: 'packages/core/package.json',
+              npmrc: 'sanitized',
+              managerData: {},
+            },
+          ],
+        }),
+      ).toResolve();
+
+      expect(fs.writeLocalFile).not.toHaveBeenCalled();
+      expect(logger.logger.warn).toHaveBeenCalledWith(
+        { npmrcFilename: 'packages/core/.npmrc', err },
+        'Error writing .npmrc',
+      );
+    });
+
     it('works only on relevant folders', async () => {
       git.getFile.mockResolvedValueOnce(
         Fixtures.get('update-lockfile-massage-1/package-lock.json'),
@@ -542,9 +596,9 @@ describe('modules/manager/npm/post-update/index', () => {
     });
 
     it('works', async () => {
-      expect(
-        await getAdditionalFiles({ ...updateConfig }, additionalFiles),
-      ).toStrictEqual({
+      await expect(
+        getAdditionalFiles({ ...updateConfig }, additionalFiles),
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -559,12 +613,12 @@ describe('modules/manager/npm/post-update/index', () => {
         }
         return Promise.resolve('');
       });
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           { ...updateConfig, reuseExistingBranch: true },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [
@@ -583,6 +637,142 @@ describe('modules/manager/npm/post-update/index', () => {
         ['randomFolder/.npmrc'],
         ['packages/pnpm/.npmrc'],
       ]);
+    });
+
+    it('restores a nested repository .npmrc after generating artifacts', async () => {
+      const npmrcFilename = 'packages/core/.npmrc';
+      const originalNpmrc = 'package-lock=false\r\nkeep = true';
+      const files = new Map<string, string>([[npmrcFilename, originalNpmrc]]);
+      fs.readLocalFile.mockImplementation(
+        (fileName): Promise<string | null> =>
+          Promise.resolve(files.get(fileName) ?? null),
+      );
+      fs.writeLocalFile.mockImplementation((fileName, content) => {
+        files.set(fileName, content.toString());
+        return Promise.resolve();
+      });
+      fs.deleteLocalFile.mockImplementation((fileName) => {
+        files.delete(fileName);
+        return Promise.resolve();
+      });
+
+      const packageFiles: AdditionalPackageFiles = {
+        npm: [
+          {
+            packageFile: 'packages/core/package.json',
+            npmrc: 'keep = true',
+            managerData: {
+              npmLock: 'packages/core/package-lock.json',
+              npmrcFileName: npmrcFilename,
+            },
+          },
+        ],
+      };
+      const config = partial<PostUpdateConfig>({
+        upgrades: [{}],
+        updatedPackageFiles: [
+          {
+            type: 'addition',
+            path: 'packages/core/package.json',
+            contents: '{}',
+          },
+        ],
+      });
+
+      await expect(getAdditionalFiles(config, packageFiles)).toResolve();
+
+      expect(files.get(npmrcFilename)).toBe(originalNpmrc);
+      expect(fs.writeLocalFile).toHaveBeenCalledWith(
+        npmrcFilename,
+        'keep = true\n',
+      );
+      expect(fs.writeLocalFile).toHaveBeenLastCalledWith(
+        npmrcFilename,
+        originalNpmrc,
+      );
+    });
+
+    it('restores a repository .npmrc when artifact generation throws', async () => {
+      const npmrcFilename = '.npmrc';
+      const originalNpmrc = 'package-lock=false';
+      let npmrcOnDisk = originalNpmrc;
+      fs.readLocalFile.mockImplementation(
+        (fileName): Promise<string | null> =>
+          Promise.resolve(fileName === npmrcFilename ? npmrcOnDisk : null),
+      );
+      fs.writeLocalFile.mockImplementation((fileName, content) => {
+        if (fileName === npmrcFilename) {
+          npmrcOnDisk = content.toString();
+        }
+        return Promise.resolve();
+      });
+      spyNpm.mockImplementationOnce(() => {
+        expect(npmrcOnDisk).toBe('\n');
+        return Promise.reject(new Error('artifact failure'));
+      });
+
+      const packageFiles: AdditionalPackageFiles = {
+        npm: [
+          {
+            packageFile: 'package.json',
+            npmrc: '',
+            managerData: {
+              npmLock: 'package-lock.json',
+              npmrcFileName: npmrcFilename,
+            },
+          },
+        ],
+      };
+      const config = partial<PostUpdateConfig>({
+        upgrades: [{}],
+        updatedPackageFiles: [
+          {
+            type: 'addition',
+            path: 'package.json',
+            contents: '{}',
+          },
+        ],
+      });
+
+      await expect(getAdditionalFiles(config, packageFiles)).rejects.toThrow(
+        'artifact failure',
+      );
+      expect(npmrcOnDisk).toBe(originalNpmrc);
+      expect(fs.writeLocalFile).toHaveBeenLastCalledWith(
+        npmrcFilename,
+        originalNpmrc,
+      );
+    });
+
+    it('logs and continues when restoring a repository .npmrc fails', async () => {
+      const npmrcFilename = '.npmrc';
+      const originalNpmrc = 'package-lock=false';
+      const err = new Error('restore failed');
+      fs.readLocalFile.mockResolvedValue(originalNpmrc);
+      fs.writeLocalFile.mockResolvedValueOnce().mockRejectedValueOnce(err);
+
+      await expect(
+        getAdditionalFiles(partial<PostUpdateConfig>({ upgrades: [] }), {
+          npm: [
+            {
+              packageFile: 'package.json',
+              npmrc: '',
+              managerData: { npmrcFileName: npmrcFilename },
+            },
+          ],
+        }),
+      ).toResolve();
+
+      expect(fs.writeLocalFile).toHaveBeenNthCalledWith(1, npmrcFilename, '\n');
+      expect(fs.writeLocalFile).toHaveBeenNthCalledWith(
+        2,
+        npmrcFilename,
+        originalNpmrc,
+      );
+      expect(logger.logger.warn).toHaveBeenCalledWith(
+        { npmrcFilename, err },
+        'Error restoring .npmrc',
+      );
     });
 
     it('adds artifact notice on beforeFallback', async () => {
@@ -673,12 +863,12 @@ describe('modules/manager/npm/post-update/index', () => {
 
     it('works for yarn', async () => {
       spyYarn.mockResolvedValueOnce({ error: false, lockFile: '{}' });
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           { ...updateConfig, reuseExistingBranch: true },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [
@@ -697,8 +887,8 @@ describe('modules/manager/npm/post-update/index', () => {
         error: false,
         lockFile: 'some-contents:',
       });
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           {
             ...updateConfig,
             reuseExistingBranch: true,
@@ -711,7 +901,7 @@ describe('modules/manager/npm/post-update/index', () => {
           },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [
@@ -726,7 +916,7 @@ describe('modules/manager/npm/post-update/index', () => {
     });
 
     it('no npm files', async () => {
-      expect(await getAdditionalFiles(baseConfig, {})).toStrictEqual({
+      await expect(getAdditionalFiles(baseConfig, {})).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -734,9 +924,9 @@ describe('modules/manager/npm/post-update/index', () => {
     });
 
     it('no lockfiles updates', async () => {
-      expect(
-        await getAdditionalFiles(baseConfig, additionalFiles),
-      ).toStrictEqual({
+      await expect(
+        getAdditionalFiles(baseConfig, additionalFiles),
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -744,8 +934,8 @@ describe('modules/manager/npm/post-update/index', () => {
     });
 
     it('skip lock file updating', async () => {
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           {
             ...updateConfig,
             skipArtifactsUpdate: true,
@@ -763,7 +953,7 @@ describe('modules/manager/npm/post-update/index', () => {
           },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -776,8 +966,8 @@ describe('modules/manager/npm/post-update/index', () => {
     });
 
     it('reuse existing up-to-date', async () => {
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           {
             ...baseConfig,
             reuseExistingBranch: true,
@@ -785,7 +975,7 @@ describe('modules/manager/npm/post-update/index', () => {
           },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -795,8 +985,8 @@ describe('modules/manager/npm/post-update/index', () => {
     it('lockfile maintenance branch exists', async () => {
       // TODO: can this really happen?
       scm.branchExists.mockResolvedValueOnce(true);
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           {
             ...baseConfig,
             upgrades: [{ isLockfileUpdate: false }],
@@ -805,7 +995,7 @@ describe('modules/manager/npm/post-update/index', () => {
           },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -814,9 +1004,9 @@ describe('modules/manager/npm/post-update/index', () => {
 
     it('fails for npm', async () => {
       spyNpm.mockResolvedValueOnce({ error: true, stderr: 'some-error' });
-      expect(
-        await getAdditionalFiles({ ...updateConfig }, additionalFiles),
-      ).toStrictEqual({
+      await expect(
+        getAdditionalFiles({ ...updateConfig }, additionalFiles),
+      ).resolves.toStrictEqual({
         artifactErrors: [
           { fileName: 'package-lock.json', stderr: 'some-error' },
         ],
@@ -827,12 +1017,12 @@ describe('modules/manager/npm/post-update/index', () => {
 
     it('fails for yarn', async () => {
       spyYarn.mockResolvedValueOnce({ error: true, stdout: 'some-error' });
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           { ...updateConfig, reuseExistingBranch: true },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [{ fileName: 'yarn.lock', stderr: 'some-error' }],
         artifactNotices: [],
         updatedArtifacts: [],
@@ -841,8 +1031,8 @@ describe('modules/manager/npm/post-update/index', () => {
 
     it('fails for pnpm', async () => {
       spyPnpm.mockResolvedValueOnce({ error: true, stdout: 'some-error' });
-      expect(
-        await getAdditionalFiles(
+      await expect(
+        getAdditionalFiles(
           {
             ...updateConfig,
             upgrades: [
@@ -854,7 +1044,7 @@ describe('modules/manager/npm/post-update/index', () => {
           },
           additionalFiles,
         ),
-      ).toStrictEqual({
+      ).resolves.toStrictEqual({
         artifactErrors: [
           { fileName: 'packages/pnpm/pnpm-lock.yaml', stderr: 'some-error' },
         ],
