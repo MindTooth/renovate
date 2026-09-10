@@ -1001,6 +1001,74 @@ describe('workers/repository/update/pr/index', () => {
         );
       });
 
+      it.each`
+        platformName
+        ${'github'}
+        ${'gitlab'}
+      `(
+        'uses $platformName body limits for grouped embedded changelogs',
+        async ({ platformName }) => {
+          const { embedChangelogs: actualEmbedChangelogs } =
+            await vi.importActual<typeof import('../../changelog/index.ts')>(
+              '../../changelog/index.ts',
+            );
+          const { getPrBody } =
+            await vi.importActual<typeof import('./body/index.ts')>(
+              './body/index.ts',
+            );
+          const actualPlatform = await vi.importActual<
+            typeof import('../../../../modules/platform/github/index.ts')
+          >(`../../../../modules/platform/${platformName}/index.ts`);
+          vi.mocked(embedChangelogs).mockImplementationOnce(
+            actualEmbedChangelogs,
+          );
+          prBody.getPrBody.mockImplementationOnce(getPrBody);
+          platform.massageMarkdown.mockImplementation(
+            actualPlatform.massageMarkdown,
+          );
+          platform.createPr.mockResolvedValueOnce(pr);
+          const maxBodyLength = actualPlatform.maxBodyLength();
+          const upgrades = ['alpha', 'beta'].map((depName) =>
+            partial<BranchUpgradeConfig>({
+              depName,
+              packageName: depName,
+              manager: 'npm',
+              repository: 'some/repo',
+              sourceUrl: 'https://github.com/example/monorepo',
+              sourceDirectory: depName,
+              versioning: 'npm',
+              currentVersion: '1.0.0',
+              newVersion: '1.1.0',
+              fetchChangeLogs: 'pr',
+              changelogReleases: [
+                {
+                  version: '1.1.0',
+                  changelogContent: `${depName} release notes\n\n${'x'.repeat(
+                    Math.ceil(maxBodyLength * 0.6),
+                  )}`,
+                  changelogUrl: `https://example.com/${depName}/1.1.0`,
+                },
+              ],
+            }),
+          );
+
+          const res = await ensurePr({
+            ...config,
+            upgrades,
+            prBodyTemplate: '{{{changelogs}}}{{{configDescription}}}',
+          });
+
+          expect(res).toEqual({ type: 'with-pr', pr });
+          expect(platform.createPr).toHaveBeenCalledTimes(1);
+          const [{ prBody: renderedBody }] = platform.createPr.mock.calls[0];
+          expect(renderedBody.length).toBeLessThanOrEqual(maxBodyLength);
+          expect(renderedBody).toContain('alpha release notes');
+          expect(renderedBody).toContain('beta release notes');
+          expect(renderedBody).toContain('truncated due to platform limits');
+          expect(renderedBody).toContain('### Configuration');
+        },
+      );
+
       it('handles missing GitHub token', async () => {
         platform.createPr.mockResolvedValueOnce(pr);
 
