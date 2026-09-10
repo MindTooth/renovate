@@ -150,6 +150,46 @@ describe('workers/repository/update/pr/changelog/releases', () => {
       ]);
     });
 
+    it.each`
+      currentValue      | currentVersion | nextPrefix        | nextSuffix        | expectedVersions
+      ${'debug-v1.2.0'} | ${'v1.2.0'}    | ${'debug-v1.3.0'} | ${'v1.4.0-debug'} | ${['v1.2.0', 'v1.3.0', 'v1.4.0']}
+      ${'debug-1.2.0'}  | ${'1.2.0'}     | ${'debug-1.3.0'}  | ${'1.4.0-debug'}  | ${['1.2.0', '1.3.0', '1.4.0']}
+    `(
+      'preserves Docker compatibility for $currentValue across a prefix-to-suffix transition',
+      async ({
+        currentValue,
+        currentVersion,
+        nextPrefix,
+        nextSuffix,
+        expectedVersions,
+      }) => {
+        vi.mocked(datasource.getPkgReleases).mockReset();
+        vi.mocked(datasource.getPkgReleases).mockResolvedValueOnce({
+          releases: [
+            { version: currentValue },
+            { version: nextPrefix },
+            { version: nextSuffix },
+            { version: 'distroless-v1.4.0' },
+            { version: 'v1.5.0-debug' },
+          ],
+        });
+        const config = partial<BranchUpgradeConfig>({
+          datasource: 'some-datasource',
+          packageName: 'some-depname',
+          versioning: dockerVersioning.id,
+          currentValue,
+          currentVersion,
+          newVersion: nextSuffix.replace('-debug', ''),
+        });
+
+        const res = await releases.getInRangeReleases(config);
+
+        expect(res).toEqual(
+          expectedVersions.map((version: string) => ({ version })),
+        );
+      },
+    );
+
     it('should return any previous version if current version is non-existent', async () => {
       const config = partial<BranchUpgradeConfig>({
         datasource: 'some-datasource',

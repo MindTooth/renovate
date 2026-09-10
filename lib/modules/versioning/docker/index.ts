@@ -11,6 +11,9 @@ export const urls = [
 export const supportsRanges = false;
 
 const versionPattern = regEx(/^(?<version>\d+(?:\.\d+)*)(?<prerelease>\w*)$/);
+const prefixedVersionPattern = regEx(
+  /^(?<compatibility>[A-Za-z][A-Za-z0-9._-]*)-(?<value>v?\d+\.\d[^-]*)(?:-(?<suffix>.*))?$/,
+);
 const commitHashPattern = regEx(/^[a-f0-9]{7,40}$/);
 const numericPattern = regEx(/^[0-9]+$/);
 
@@ -26,7 +29,15 @@ class DockerVersioningApi extends GenericVersioningApi {
     const [prefix, ...suffixPieces] = versionPieces;
     const matchGroups = prefix?.match(versionPattern)?.groups;
     if (!matchGroups) {
-      return null;
+      const prefixedMatchGroups = version.match(prefixedVersionPattern)?.groups;
+      if (!prefixedMatchGroups) {
+        return null;
+      }
+
+      const normalizedSuffix = prefixedMatchGroups.suffix
+        ? `${prefixedMatchGroups.compatibility}-${prefixedMatchGroups.suffix}`
+        : prefixedMatchGroups.compatibility;
+      return this._parse(`${prefixedMatchGroups.value}-${normalizedSuffix}`);
     }
 
     const { version: ver, prerelease } = matchGroups;
@@ -90,6 +101,11 @@ class DockerVersioningApi extends GenericVersioningApi {
   }
 
   valueToVersion(value: string): string {
+    const prefixedVersion = value?.match(prefixedVersionPattern)?.groups?.value;
+    if (prefixedVersion && this.isValid(value)) {
+      return prefixedVersion;
+    }
+
     // Remove any suffix after '-', e.g. '-alpine'
     return value ? value.split('-')[0] : value;
   }

@@ -3,6 +3,8 @@ Tags are often used by Docker image authors as a form of versioning.
 
 Renovate tries to follow the most common _conventions_ that are used to tag Docker images.
 In particular, Renovate treats the text after the first hyphen as a type of platform/compatibility indicator.
+Renovate also recognizes compatibility before a dotted numeric version, such as `distroless-v1.2.3` or `debug-1.2.3`.
+Compatibility is preserved even if its position changes, so `debug-v1.2.3` is compatible with `v1.2.4-debug`.
 
 For example, many images have releases with the `-alpine` suffix.
 The official `node` Docker image has tags like `12.15.0-alpine` which is _not_ compatible with `12.15.0` or `12.15.0-stretch`.

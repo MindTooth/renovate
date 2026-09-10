@@ -19,18 +19,36 @@ describe('modules/versioning/docker/index', () => {
     ${'0A1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d'}  | ${true}
     ${'123098140293'}                              | ${true}
     ${'01aecc#v2.1.0'}                             | ${false}
+    ${'debug-v1.2.0'}                              | ${true}
+    ${'distroless-v1.39.1'}                        | ${true}
+    ${'contrib-distroless-v1.39.1'}                | ${true}
+    ${'debug-v1.2.0-alpine'}                       | ${true}
+    ${'debug-v1.2'}                                | ${true}
+    ${'debug-1.2.0'}                               | ${true}
+    ${'latest-kafka-4.3.1'}                        | ${true}
+    ${'ubuntu-22.04'}                              | ${true}
+    ${'debug-1.2.0-alpine'}                        | ${true}
+    ${'debug-1'}                                   | ${false}
+    ${'build-123'}                                 | ${false}
+    ${'-v1.2.0'}                                   | ${false}
+    ${'-1.2.0'}                                    | ${false}
+    ${'debug-v'}                                   | ${false}
+    ${'debug-1.2.0#'}                              | ${false}
   `('isValid("$version") === $expected', ({ version, expected }) => {
     const res = docker.isValid(version);
     expect(!!res).toBe(expected);
   });
 
   it.each`
-    version    | major   | minor   | patch
-    ${'1.2.3'} | ${1}    | ${2}    | ${3}
-    ${'18.04'} | ${18}   | ${4}    | ${null}
-    ${'10.1'}  | ${10}   | ${1}    | ${null}
-    ${'3'}     | ${3}    | ${null} | ${null}
-    ${'foo'}   | ${null} | ${null} | ${null}
+    version               | major   | minor   | patch
+    ${'1.2.3'}            | ${1}    | ${2}    | ${3}
+    ${'18.04'}            | ${18}   | ${4}    | ${null}
+    ${'10.1'}             | ${10}   | ${1}    | ${null}
+    ${'3'}                | ${3}    | ${null} | ${null}
+    ${'foo'}              | ${null} | ${null} | ${null}
+    ${'debug-v1.2.3'}     | ${1}    | ${2}    | ${3}
+    ${'debug-1.2.3'}      | ${1}    | ${2}    | ${3}
+    ${'distroless-v18.4'} | ${18}   | ${4}    | ${null}
   `(
     'getMajor, getMinor, getPatch for "$version"',
     ({ version, major, minor, patch }) => {
@@ -41,12 +59,16 @@ describe('modules/versioning/docker/index', () => {
   );
 
   it.each`
-    a          | b           | expected
-    ${'1.2.3'} | ${'1.2'}    | ${false}
-    ${'18.04'} | ${'18.1'}   | ${true}
-    ${'10.1'}  | ${'10.1.2'} | ${true}
-    ${'3'}     | ${'2'}      | ${true}
-    ${'1.2.3'} | ${'1.2.3'}  | ${false}
+    a                  | b                 | expected
+    ${'1.2.3'}         | ${'1.2'}          | ${false}
+    ${'18.04'}         | ${'18.1'}         | ${true}
+    ${'10.1'}          | ${'10.1.2'}       | ${true}
+    ${'3'}             | ${'2'}            | ${true}
+    ${'1.2.3'}         | ${'1.2.3'}        | ${false}
+    ${'debug-v1.3.0'}  | ${'debug-v1.2.0'} | ${true}
+    ${'v1.24.0-debug'} | ${'debug-v1.2.0'} | ${true}
+    ${'1.24.0-debug'}  | ${'debug-1.2.0'}  | ${true}
+    ${'1.3.0-rc1-2'}   | ${'1.2.0-rc1-2'}  | ${true}
   `('isGreaterThan($a, $b) === $expected', ({ a, b, expected }) => {
     expect(docker.isGreaterThan(a, b)).toBe(expected);
   });
@@ -169,25 +191,40 @@ describe('modules/versioning/docker/index', () => {
     ${'3.8.0-alpine'}   | ${true}
     ${'3.8.0b1-alpine'} | ${false}
     ${'3.8.2'}          | ${true}
+    ${'debug-v1.2.0'}   | ${true}
+    ${'debug-v1.2.0b1'} | ${false}
+    ${'debug-1.2.0'}    | ${true}
+    ${'debug-1.2.0b1'}  | ${false}
   `('isStable("$version") === $expected', ({ version, expected }) => {
     const res = docker.isStable(version);
     expect(!!res).toBe(expected);
   });
 
   it.each`
-    version             | range             | expected
-    ${'3.7.0'}          | ${'3.7.0'}        | ${true}
-    ${'3.7.0b1'}        | ${'3.7.0'}        | ${true}
-    ${'3.7-alpine'}     | ${'3.7.0'}        | ${false}
-    ${'3.8.0-alpine'}   | ${'3.7.0'}        | ${false}
-    ${'3.8.0b1-alpine'} | ${'3.7.0'}        | ${false}
-    ${'3.8.2'}          | ${'3.7.0'}        | ${true}
-    ${'3.7.0'}          | ${'3.7.0-alpine'} | ${false}
-    ${'3.7.0b1'}        | ${'3.7.0-alpine'} | ${false}
-    ${'3.7-alpine'}     | ${'3.7.0-alpine'} | ${false}
-    ${'3.8.0-alpine'}   | ${'3.7.0-alpine'} | ${true}
-    ${'3.8.0b1-alpine'} | ${'3.7.0-alpine'} | ${true}
-    ${'3.8.2'}          | ${'3.7.0-alpine'} | ${false}
+    version                         | range                           | expected
+    ${'3.7.0'}                      | ${'3.7.0'}                      | ${true}
+    ${'3.7.0b1'}                    | ${'3.7.0'}                      | ${true}
+    ${'3.7-alpine'}                 | ${'3.7.0'}                      | ${false}
+    ${'3.8.0-alpine'}               | ${'3.7.0'}                      | ${false}
+    ${'3.8.0b1-alpine'}             | ${'3.7.0'}                      | ${false}
+    ${'3.8.2'}                      | ${'3.7.0'}                      | ${true}
+    ${'3.7.0'}                      | ${'3.7.0-alpine'}               | ${false}
+    ${'3.7.0b1'}                    | ${'3.7.0-alpine'}               | ${false}
+    ${'3.7-alpine'}                 | ${'3.7.0-alpine'}               | ${false}
+    ${'3.8.0-alpine'}               | ${'3.7.0-alpine'}               | ${true}
+    ${'3.8.0b1-alpine'}             | ${'3.7.0-alpine'}               | ${true}
+    ${'3.8.2'}                      | ${'3.7.0-alpine'}               | ${false}
+    ${'debug-v1.3.0'}               | ${'debug-v1.2.0'}               | ${true}
+    ${'v1.24.0-debug'}              | ${'debug-v1.2.0'}               | ${true}
+    ${'1.24.0-debug'}               | ${'debug-1.2.0'}                | ${true}
+    ${'debug-v1.3.0'}               | ${'debug-1.2.0'}                | ${true}
+    ${'latest-kafka-4.4.0'}         | ${'latest-connect-4.3.0'}       | ${false}
+    ${'4.4.0-latest-kafka'}         | ${'latest-kafka-4.3.0'}         | ${true}
+    ${'distroless-v1.3.0'}          | ${'debug-v1.2.0'}               | ${false}
+    ${'contrib-distroless-v1.40.0'} | ${'contrib-distroless-v1.39.1'} | ${true}
+    ${'debug-v1.3.0-alpine'}        | ${'v1.2.0-debug-alpine'}        | ${true}
+    ${'debug-v1.3'}                 | ${'v1.2.0-debug'}               | ${false}
+    ${'1.3.0-rc1-2'}                | ${'1.2.0-rc1-2'}                | ${true}
   `(
     'isCompatible("$version") === $expected',
     ({ version, range, expected }) => {
@@ -197,14 +234,23 @@ describe('modules/versioning/docker/index', () => {
   );
 
   it.each`
-    value               | expected
-    ${'3.7.0'}          | ${'3.7.0'}
-    ${'3.7.0b1'}        | ${'3.7.0b1'}
-    ${'3.7-alpine'}     | ${'3.7'}
-    ${'3.8.0-alpine'}   | ${'3.8.0'}
-    ${'3.8.0b1-alpine'} | ${'3.8.0b1'}
-    ${'3.8.2'}          | ${'3.8.2'}
-    ${undefined}        | ${undefined}
+    value                           | expected
+    ${'3.7.0'}                      | ${'3.7.0'}
+    ${'3.7.0b1'}                    | ${'3.7.0b1'}
+    ${'3.7-alpine'}                 | ${'3.7'}
+    ${'3.8.0-alpine'}               | ${'3.8.0'}
+    ${'3.8.0b1-alpine'}             | ${'3.8.0b1'}
+    ${'3.8.2'}                      | ${'3.8.2'}
+    ${'debug-v1.2.0'}               | ${'v1.2.0'}
+    ${'distroless-v1.39.1'}         | ${'v1.39.1'}
+    ${'contrib-distroless-v1.39.1'} | ${'v1.39.1'}
+    ${'debug-v1.2.0-alpine'}        | ${'v1.2.0'}
+    ${'debug-1.2.0'}                | ${'1.2.0'}
+    ${'latest-kafka-4.3.1'}         | ${'4.3.1'}
+    ${'debug-1.2.0-alpine'}         | ${'1.2.0'}
+    ${'build-123'}                  | ${'build'}
+    ${'debug-1.2.0#'}               | ${'debug'}
+    ${undefined}                    | ${undefined}
   `('valueToVersion("$value") === $expected', ({ value, expected }) => {
     const res = docker.valueToVersion?.(value);
     expect(res).toBe(expected);

@@ -4267,6 +4267,47 @@ describe('workers/repository/process/lookup/index', () => {
       });
     });
 
+    it.each`
+      currentValue      | currentVersion
+      ${'debug-v1.2.0'} | ${'v1.2.0'}
+      ${'debug-1.2.0'}  | ${'1.2.0'}
+    `(
+      'updates the Docker compatibility prefix in $currentValue across a tag layout change',
+      async ({ currentValue, currentVersion }) => {
+        config.currentValue = currentValue;
+        config.packageName = 'gcr.io/kaniko-project/executor';
+        config.versioning = dockerVersioningId;
+        config.datasource = DockerDatasource.id;
+        getDockerReleases.mockResolvedValueOnce({
+          releases: [
+            { version: currentValue },
+            { version: 'debug-v1.3.0' },
+            { version: 'v1.3.0-debug' },
+            { version: 'v1.24.0-debug' },
+            { version: 'distroless-v1.25.0' },
+            { version: 'v1.25.0' },
+          ],
+        });
+
+        const res = await Result.wrap(
+          lookup.lookupUpdates(config),
+        ).unwrapOrThrow();
+
+        expect(res).toMatchObject({
+          currentVersion,
+          fixedVersion: currentValue,
+          updates: [
+            {
+              newValue: 'v1.24.0-debug',
+              newVersion: 'v1.24.0',
+              updateType: 'minor',
+            },
+          ],
+        });
+        expect(res.updates).toHaveLength(1);
+      },
+    );
+
     it('applies versionCompatibility for 18.10.0', async () => {
       config.currentValue = '18.10.0-alpine';
       config.currentDigest = 'aaa111';
