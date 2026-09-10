@@ -4,46 +4,8 @@ import * as p from '../../../util/promises.ts';
 import type { BranchUpgradeConfig } from '../../types.ts';
 import { getChangeLogJSON } from '../update/pr/changelog/index.ts';
 import { filterInRangeReleases } from '../update/pr/changelog/releases.ts';
-import type {
-  ChangeLogProject,
-  ChangeLogRelease,
-  ChangeLogResult,
-} from '../update/pr/changelog/types.ts';
+import type { ChangeLogResult } from '../update/pr/changelog/types.ts';
 import type { EmbedChangelogsOptions } from './types.ts';
-
-function getChangelogProject(upgrade: BranchUpgradeConfig): ChangeLogProject {
-  return {
-    packageName: upgrade.packageName,
-    depName: upgrade.depName,
-    type: undefined!,
-    apiBaseUrl: undefined!,
-    baseUrl: undefined!,
-    repository: upgrade.repository!,
-    sourceUrl: upgrade.sourceUrl!,
-    sourceDirectory: upgrade.sourceDirectory,
-  };
-}
-
-function createChangelogRelease(
-  version: string,
-  changelogContent: string,
-  changelogUrl?: string,
-  date?: string | null,
-  gitRef?: string,
-): ChangeLogRelease {
-  return {
-    changes: [],
-    compare: {},
-    date: date!,
-    releaseNotes: {
-      body: changelogContent,
-      notesSourceUrl: undefined!,
-      url: changelogUrl!,
-    },
-    gitRef: gitRef!,
-    version,
-  };
-}
 
 function getReleaseChangelog(
   upgrade: BranchUpgradeConfig,
@@ -76,43 +38,28 @@ function getReleaseChangelog(
 
   return {
     hasReleaseNotes: true,
-    project: getChangelogProject(upgrade),
-    versions: releases.map((release) =>
-      createChangelogRelease(
-        release.version,
-        release.changelogContent!,
-        release.changelogUrl,
-        release.releaseTimestamp,
-        release.gitRef,
-      ),
-    ),
-  };
-}
-
-function getSingleReleaseChangelog(
-  upgrade: BranchUpgradeConfig,
-): ChangeLogResult | null {
-  if (upgrade.changelogContent === undefined) {
-    return null;
-  }
-
-  return {
-    hasReleaseNotes: true,
-    project: getChangelogProject(upgrade),
-    versions: [
-      {
-        changes: undefined!,
-        compare: undefined!,
-        date: undefined!,
-        releaseNotes: {
-          body: upgrade.changelogContent,
-          notesSourceUrl: undefined!,
-          url: upgrade.changelogUrl!,
-        },
-        gitRef: undefined!,
-        version: upgrade.newVersion!,
+    project: {
+      packageName: upgrade.packageName,
+      depName: upgrade.depName,
+      type: undefined!,
+      apiBaseUrl: undefined!,
+      baseUrl: undefined!,
+      repository: upgrade.repository!,
+      sourceUrl: upgrade.sourceUrl!,
+      sourceDirectory: upgrade.sourceDirectory,
+    },
+    versions: releases.map((release) => ({
+      changes: [],
+      compare: {},
+      date: release.releaseTimestamp!,
+      releaseNotes: {
+        body: release.changelogContent!,
+        notesSourceUrl: undefined!,
+        url: release.changelogUrl!,
       },
-    ],
+      gitRef: release.gitRef!,
+      version: release.version,
+    })),
   };
 }
 
@@ -130,8 +77,37 @@ export async function embedChangelog(
     return;
   }
 
-  const singleReleaseChangelog = getSingleReleaseChangelog(upgrade);
-  upgrade.logJSON = singleReleaseChangelog ?? (await getChangeLogJSON(upgrade));
+  if (upgrade.changelogContent === undefined) {
+    upgrade.logJSON = await getChangeLogJSON(upgrade);
+  } else {
+    upgrade.logJSON = {
+      hasReleaseNotes: true,
+      project: {
+        packageName: upgrade.packageName,
+        depName: upgrade.depName,
+        type: undefined!,
+        apiBaseUrl: undefined!,
+        baseUrl: undefined!,
+        repository: upgrade.repository!,
+        sourceUrl: upgrade.sourceUrl!,
+        sourceDirectory: upgrade.sourceDirectory,
+      },
+      versions: [
+        {
+          changes: undefined!,
+          compare: undefined!,
+          date: undefined!,
+          releaseNotes: {
+            body: upgrade.changelogContent,
+            notesSourceUrl: undefined!,
+            url: upgrade.changelogUrl!,
+          },
+          gitRef: undefined!,
+          version: upgrade.newVersion!,
+        },
+      ],
+    };
+  }
 }
 
 export async function embedChangelogs({
