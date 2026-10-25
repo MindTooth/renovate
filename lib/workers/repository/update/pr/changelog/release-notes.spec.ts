@@ -927,6 +927,53 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
   });
 
   describe('getReleaseNotes()', () => {
+    describe.each([false, true])(
+      'release matching (reversed: %s)',
+      (reversed) => {
+        it.each`
+          packageName                     | depName  | tags                                                     | expected
+          ${'foo'}                        | ${'bar'} | ${['1.0.1', 'foo-1.0.1']}                                | ${'foo-1.0.1'}
+          ${'other'}                      | ${'foo'} | ${['v1.0.1', 'foo-1.0.1']}                               | ${'foo-1.0.1'}
+          ${'foo'}                        | ${'bar'} | ${['1.0.1', 'v1.0.1']}                                   | ${'1.0.1'}
+          ${'foo'}                        | ${'bar'} | ${['foobar-1.0.1', 'v1.0.1']}                            | ${'v1.0.1'}
+          ${'foo.js+[core]'}              | ${'bar'} | ${['fooXjsscore-1.0.1', 'foo.js+[core]-1.0.1', '1.0.1']} | ${'foo.js+[core]-1.0.1'}
+          ${'other'}                      | ${'a+b'} | ${['aaab-1.0.1', 'a+b-1.0.1', '1.0.1']}                  | ${'a+b-1.0.1'}
+          ${'foo'}                        | ${'bar'} | ${['foo-1.0.10-1.0.1', '1.0.1']}                         | ${'1.0.1'}
+          ${'foo'}                        | ${'bar'} | ${['foo-1.0.10', 'foo-1.0.1-rc.1', '1.0.1']}             | ${'1.0.1'}
+          ${'foo'}                        | ${'bar'} | ${['foo-v1.0.1', 'foo-1.0.1', '1.0.1']}                  | ${'foo-1.0.1'}
+          ${'ghcr.io/actions/charts/foo'} | ${'bar'} | ${['1.0.1', 'foo-1.0.1']}                                | ${'foo-1.0.1'}
+        `(
+          'selects $expected for $packageName / $depName',
+          async ({ packageName, depName, tags, expected }) => {
+            const versions: string[] = reversed ? tags.toReversed() : tags;
+            githubReleasesMock.mockResolvedValueOnce(
+              versions.map((version, id) => ({
+                id,
+                version,
+                releaseTimestamp: '2020-01-01' as Timestamp,
+                url: `https://github.com/some/repository/releases/tag/${version}`,
+                name: version,
+                description: 'Release notes',
+              })),
+            );
+
+            const result = await getReleaseNotes(
+              {
+                ...githubProject,
+                repository: 'some/repository',
+                packageName,
+                depName,
+              },
+              partial<ChangeLogRelease>({ version: '1.0.1' }),
+              partial<BranchUpgradeConfig>(),
+            );
+
+            expect(result?.tag).toBe(expected);
+          },
+        );
+      },
+    );
+
     it('should return null for release notes without body and name', async () => {
       githubReleasesMock.mockResolvedValueOnce([
         {

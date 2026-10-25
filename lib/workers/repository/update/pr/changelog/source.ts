@@ -195,6 +195,7 @@ export abstract class ChangeLogSource {
             this.getCacheKey(
               sourceUrl,
               packageName,
+              depName,
               prev.version,
               next.version,
             ),
@@ -237,6 +238,7 @@ export abstract class ChangeLogSource {
               this.getCacheKey(
                 sourceUrl,
                 packageName,
+                depName,
                 prev.version,
                 next.version,
               ),
@@ -275,25 +277,33 @@ export abstract class ChangeLogSource {
     depNewVersion: string,
     tags: string[],
   ): string | undefined {
-    const releaseRegexPrefix = `^(?:${packageName}|${depName}|release)[@_-]v?`;
-    const regex = regEx(releaseRegexPrefix, undefined, false);
-    const exactReleaseRegex = regEx(`${releaseRegexPrefix}${depNewVersion}`);
-    const exactTagsList = tags.filter((tag) => {
-      return exactReleaseRegex.test(tag);
-    });
-    const tagList = exactTagsList.length ? exactTagsList : tags;
-    const candidates = tagList
+    const names = [packageName, depName]
+      .filter(isNonEmptyString)
+      .map((name) => RegExp.escape(name))
+      .join('|');
+    const releaseRegexPrefix = `^(?:${names})[@_-]v?`;
+    const regex = regEx(`^(?:${names}|release)[@_-]v?`);
+    const exactReleaseRegex = regEx(
+      `${releaseRegexPrefix}${RegExp.escape(depNewVersion)}(?:$|\\.)`,
+    );
+    const matchingTags = tags
       .filter((tag) => versioningApi.isVersion(tag.replace(regex, '')))
       .filter((tag) =>
         versioningApi.equals(tag.replace(regex, ''), depNewVersion),
       );
+    const exactTagsList = matchingTags.filter((tag) =>
+      exactReleaseRegex.test(tag),
+    );
+    const candidates = (
+      exactTagsList.length ? exactTagsList : matchingTags
+    ).sort();
     if (!candidates.length) {
       return undefined;
     }
     // Some versioning schemes (e.g. `github-actions`) treat a floating tag
     // like `v7` as equal to a precise one like `v7.0.0` via coercion, so more
     // than one tag can match the same release. Prefer the most precise tag
-    // (most dot-separated segments), else keep the first match found.
+    // (most dot-separated segments), breaking ties lexically.
     return candidates.reduce((mostPrecise, candidate) =>
       tagPrecision(candidate) > tagPrecision(mostPrecise)
         ? candidate
@@ -327,10 +337,17 @@ export abstract class ChangeLogSource {
   private getCacheKey(
     sourceUrl: string,
     packageName: string,
+    depName: string,
     prev: string,
     next: string,
   ): string {
-    return buildCacheKey(slugifyUrl(sourceUrl), packageName, prev, next);
+    return buildCacheKey(
+      slugifyUrl(sourceUrl),
+      packageName,
+      depName,
+      prev,
+      next,
+    );
   }
 
   getBaseUrl(config: BranchUpgradeConfig): string {

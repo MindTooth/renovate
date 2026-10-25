@@ -141,7 +141,7 @@ describe('workers/repository/update/pr/changelog/github/source', () => {
       const fetchedPairs = packageCacheSetSpy.mock.calls
         .filter((call) => call[0] === 'changelog-github-release')
         .map((call) => {
-          const [, , prev, next] = call[1].split(':');
+          const [, , , prev, next] = call[1].split(':');
           return `${prev}->${next}`;
         });
       expect(fetchedPairs).toEqual([
@@ -295,6 +295,195 @@ describe('workers/repository/update/pr/changelog/github/source', () => {
         }),
       );
     });
+
+    describe.each([false, true])(
+      'comparison matching (reversed: %s)',
+      (reversed) => {
+        it.each`
+          packageName        | depName  | prefixes                     | expectedPrefix
+          ${'foo'}           | ${'bar'} | ${['v', 'release-', 'foo-']} | ${'foo-'}
+          ${'other'}         | ${'foo'} | ${['v', 'release-', 'foo-']} | ${'foo-'}
+          ${'foo'}           | ${'bar'} | ${['v']}                     | ${'v'}
+          ${'foo'}           | ${'bar'} | ${['release-']}              | ${'release-'}
+          ${'foo'}           | ${'bar'} | ${['foobar-', 'v']}          | ${'v'}
+          ${'foo.js+[core]'} | ${'bar'} | ${['foo.js+[core]-', 'v']}   | ${'foo.js+[core]-'}
+          ${'other'}         | ${'a+b'} | ${['a+b-', 'v']}             | ${'a+b-'}
+          ${'foo.js'}        | ${'bar'} | ${['fooXjs-', 'v']}          | ${'v'}
+          ${'other'}         | ${'a+b'} | ${['aaab-', 'v']}            | ${'v'}
+          ${'foo'}           | ${'bar'} | ${['foo-v', 'foo-', 'v']}    | ${'foo-'}
+          ${'foo'}           | ${'bar'} | ${['v', '']}                 | ${''}
+        `(
+          'uses $expectedPrefix for $packageName / $depName',
+          async ({ packageName, depName, prefixes, expectedPrefix }) => {
+            httpMock
+              .scope('https://api.github.com')
+              .get(/.*/)
+              .reply(200, [])
+              .persist();
+            vi.spyOn(githubGraphql, 'queryReleases').mockResolvedValue([]);
+            const tags: string[] = prefixes.flatMap((prefix: string) =>
+              ['1.0.0', '1.0.1'].map((version) => `${prefix}${version}`),
+            );
+            tags.push('foo-1.0.10', 'foo-1.0.1-rc.1');
+            vi.spyOn(githubGraphql, 'queryTags').mockResolvedValue(
+              (reversed ? tags.toReversed() : tags).map((version) =>
+                partial<GithubTagItem>({ version }),
+              ),
+            );
+
+            const result = await getChangeLogJSON({
+              ...upgrade,
+              packageName,
+              depName,
+              currentVersion: '1.0.0',
+              newVersion: '1.0.1',
+              releases: [{ version: '1.0.0' }, { version: '1.0.1' }],
+            });
+
+            expect(result?.versions?.[0].compare.url).toBe(
+              `https://github.com/chalk/chalk/compare/${expectedPrefix}1.0.0...${expectedPrefix}1.0.1`,
+            );
+          },
+        );
+      },
+    );
+
+    it.each`
+      tags                                  | expected
+      ${['foo-v7', 'foo-v7.0.0', 'v7.0.0']} | ${'foo-v7.0.0'}
+      ${['foo-v7', 'v7.0.0']}               | ${'v7.0.0'}
+      ${['foo-v7']}                         | ${'foo-v7'}
+    `(
+      'preserves floating tag precision with $tags',
+      async ({ tags, expected }) => {
+        httpMock
+          .scope('https://api.github.com')
+          .get(/.*/)
+          .reply(200, [])
+          .persist();
+        vi.spyOn(githubGraphql, 'queryReleases').mockResolvedValue([]);
+        vi.spyOn(githubGraphql, 'queryTags').mockResolvedValue(
+          [...tags, 'foo-v7.0.1'].map((version) =>
+            partial<GithubTagItem>({ version }),
+          ),
+        );
+
+        const result = await getChangeLogJSON({
+          ...upgrade,
+          packageName: 'foo',
+          versioning: 'github-actions',
+          currentVersion: '7.0.0',
+          newVersion: '7.0.1',
+          releases: [{ version: '7.0.0' }, { version: '7.0.1' }],
+        });
+
+        expect(result?.versions?.[0].compare.url).toBe(
+          `https://github.com/chalk/chalk/compare/${expected}...foo-v7.0.1`,
+        );
+      },
+    );
+
+    it('isolates comparison caches for different dependency names', async () => {
+      httpMock
+        .scope('https://api.github.com')
+        .get(/.*/)
+        .reply(200, [])
+        .persist();
+      vi.spyOn(githubGraphql, 'queryReleases').mockResolvedValue([]);
+      vi.spyOn(githubGraphql, 'queryTags').mockResolvedValue(
+        ['foo', 'bar'].flatMap((name) =>
+          ['1.0.0', '1.0.1'].map((version) =>
+            partial<GithubTagItem>({ version: `${name}-${version}` }),
+          ),
+        ),
+      );
+      const config = {
+        ...upgrade,
+        packageName: 'shared',
+        currentVersion: '1.0.0',
+        newVersion: '1.0.1',
+        releases: [{ version: '1.0.0' }, { version: '1.0.1' }],
+      };
+
+      const cache = new Map<string, unknown>();
+      vi.spyOn(packageCache, 'get').mockImplementation((namespace, key) =>
+        Promise.resolve(cache.get(`${namespace}:${key}`)),
+      );
+      vi.spyOn(packageCache, 'set').mockImplementation(
+        (namespace, key, value) => {
+          if (namespace === 'changelog-github-release') {
+            cache.set(`${namespace}:${key}`, value);
+          }
+          return Promise.resolve();
+        },
+      );
+
+      const foo = await getChangeLogJSON({ ...config, depName: 'foo' });
+      const bar = await getChangeLogJSON({ ...config, depName: 'bar' });
+
+      expect(foo?.versions?.[0].compare.url).toBe(
+        'https://github.com/chalk/chalk/compare/foo-1.0.0...foo-1.0.1',
+      );
+      expect(bar?.versions?.[0].compare.url).toBe(
+        'https://github.com/chalk/chalk/compare/bar-1.0.0...bar-1.0.1',
+      );
+    });
+
+    it.each([false, true])(
+      'selects the gha-runner-scale-set chart release (reversed: %s)',
+      async (reversed) => {
+        httpMock
+          .scope('https://api.github.com')
+          .get(/.*/)
+          .reply(200, [])
+          .persist();
+        const versions = ['0.9.1', '0.9.3'].flatMap((version) => [
+          `v${version}`,
+          `gha-runner-scale-set-${version}`,
+        ]);
+        const ordered = reversed ? versions.toReversed() : versions;
+        vi.spyOn(githubGraphql, 'queryTags').mockResolvedValue(
+          ordered.map((version) => partial<GithubTagItem>({ version })),
+        );
+        vi.spyOn(githubGraphql, 'queryReleases').mockResolvedValue(
+          ordered.map((version, id) => ({
+            id,
+            version,
+            releaseTimestamp: '2024-06-01' as Timestamp,
+            url: `https://github.com/actions/actions-runner-controller/releases/tag/${version}`,
+            name: version,
+            description: version.startsWith('gha-')
+              ? 'Helm chart release'
+              : 'Unrelated repository release',
+          })),
+        );
+
+        const result = await getChangeLogJSON({
+          ...upgrade,
+          packageName:
+            'ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set',
+          depName: 'gha-runner-scale-set',
+          versioning: 'docker',
+          sourceUrl: 'https://github.com/actions/actions-runner-controller',
+          currentVersion: '0.9.1',
+          newVersion: '0.9.3',
+          releases: [{ version: '0.9.1' }, { version: '0.9.3' }],
+        });
+
+        expect(result?.versions).toMatchObject([
+          {
+            compare: {
+              url: 'https://github.com/actions/actions-runner-controller/compare/gha-runner-scale-set-0.9.1...gha-runner-scale-set-0.9.3',
+            },
+            releaseNotes: {
+              tag: 'gha-runner-scale-set-0.9.3',
+              body: 'Helm chart release\n',
+              url: 'https://github.com/actions/actions-runner-controller/releases/tag/gha-runner-scale-set-0.9.3',
+            },
+          },
+        ]);
+      },
+    );
 
     it('works with same version releases but different prefix', async () => {
       const githubTagsMock = vi.spyOn(githubGraphql, 'queryTags');

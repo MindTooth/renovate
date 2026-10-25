@@ -150,7 +150,11 @@ export async function getReleaseNotes(
     logger.trace(
       `getReleaseNotes(${repository}, ${version}, ${packageName!}, ${depName!})`,
     );
-    const releases = await getCachedReleaseList(project, release, source);
+    const releases = (
+      await getCachedReleaseList(project, release, source)
+    ).toSorted((a, b) =>
+      coerceString(a.tag).localeCompare(coerceString(b.tag)),
+    );
     logger.trace({ releases }, 'Release list from getReleaseList');
     let releaseNotes: ChangeLogNotes | null = null;
 
@@ -196,7 +200,7 @@ function getExactReleaseMatch(
   }
 
   const exactReleaseReg = regEx(
-    `(?:^|/)(?:${namePatterns.join('|')})[@_/-]v?${RegExp.escape(version)}`,
+    `(?:^|/)(?:${namePatterns.join('|')})[@_/-]v?${RegExp.escape(version)}$`,
   );
   const candidateReleases = releases.filter((r) => r.tag?.endsWith(version));
   const matchedRelease = candidateReleases.find((r) =>
