@@ -613,9 +613,12 @@ export async function processBranch(
         'Base branch changed by user, rebasing the branch onto new base',
       );
       config.reuseExistingBranch = false;
-    } else if (config.cacheFingerprintMatch === 'no-match') {
+    } else if (
+      config.cacheFingerprintMatch === 'no-match' ||
+      config.cacheFingerprintMatch === 'no-fingerprint'
+    ) {
       logger.debug(
-        'Cache fingerprint does not match, cannot reuse existing branch',
+        'Cache fingerprint missing or changed, cannot reuse existing branch',
       );
       config.reuseExistingBranch = false;
     } else {
