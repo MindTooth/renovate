@@ -92,7 +92,7 @@ describe('util/cache/package/ttl', () => {
         });
 
         const resDatasource = getTtlOverride('datasource-npm' as never);
-        const resChangelog = getTtlOverride('changelog-github-notes@v2');
+        const resChangelog = getTtlOverride('changelog-github-notes@v3');
         const resAny = getTtlOverride('any-namespace' as never);
 
         expect(resDatasource).toBe(45);
@@ -120,12 +120,12 @@ describe('util/cache/package/ttl', () => {
         GlobalConfig.set({
           cacheTtlOverride: {
             'datasource-npm:*': 120,
-            'changelog-*@v2': 60,
+            'changelog-*@v3': 60,
           },
         });
 
         const resColon = getTtlOverride('datasource-npm:cache-provider');
-        const resAt = getTtlOverride('changelog-github-notes@v2');
+        const resAt = getTtlOverride('changelog-github-notes@v3');
 
         expect(resColon).toBe(120);
         expect(resAt).toBe(60);
@@ -142,7 +142,7 @@ describe('util/cache/package/ttl', () => {
 
         const resNpm = getTtlOverride('datasource-npm' as never);
         const resDocker = getTtlOverride('datasource-docker' as never);
-        const resChangelog = getTtlOverride('changelog-github-notes@v2');
+        const resChangelog = getTtlOverride('changelog-github-notes@v3');
 
         expect(resNpm).toBe(75);
         expect(resDocker).toBe(75);

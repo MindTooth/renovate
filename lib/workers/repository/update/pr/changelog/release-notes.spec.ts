@@ -10,7 +10,8 @@ import * as githubGraphql from '../../../../../util/github/graphql/index.ts';
 import type { GithubReleaseItem } from '../../../../../util/github/graphql/types.ts';
 import { toBase64 } from '../../../../../util/string.ts';
 import type { Timestamp } from '../../../../../util/timestamp.ts';
-import type { BranchUpgradeConfig } from '../../../../types.ts';
+import type { BranchConfig, BranchUpgradeConfig } from '../../../../types.ts';
+import { getChangelogs } from '../body/changelogs.ts';
 import { getChangeLogSourceFor } from './index.ts';
 import {
   addReleaseNotes as addReleaseNotesRaw,
@@ -22,6 +23,7 @@ import {
   releaseNotesCacheMinutes,
   shouldSkipChangelogMd,
 } from './release-notes.ts';
+import type { ChangeLogSource } from './source.ts';
 import type {
   ChangeLogNotes,
   ChangeLogProject,
@@ -431,7 +433,7 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
       await addReleaseNotes(input, partial<BranchUpgradeConfig>());
 
       expect(packageCacheGetSpy).toHaveBeenCalledWith(
-        'changelog-github-notes@v2',
+        'changelog-github-notes@v3',
         'react/react-native::1.0.0:',
       );
     });
@@ -485,7 +487,7 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
       await addReleaseNotes(input, partial<BranchUpgradeConfig>());
 
       expect(packageCacheSetSpy).toHaveBeenCalledExactlyOnceWith(
-        'changelog-github-notes@v2',
+        'changelog-github-notes@v3',
         'react/react-native::1.0.0:',
         { url: 'https://example.com/compare', notesSourceUrl: '' },
         55,
@@ -526,7 +528,7 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
       await addReleaseNotes(input, partial<BranchUpgradeConfig>());
 
       expect(packageCacheGetSpy).toHaveBeenCalledWith(
-        'changelog-github-notes@v2',
+        'changelog-github-notes@v3',
         'react/react-native:packages/core:1.0.0:custom-a/1.0.0',
       );
     });
@@ -674,11 +676,11 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
         notesSourceUrl: '',
       });
       expect(packageCacheGetSpy).toHaveBeenCalledWith(
-        'changelog-github-notes@v2',
+        'changelog-github-notes@v3',
         'react/react-native::2.0.0:',
       );
       expect(packageCacheGetSpy).not.toHaveBeenCalledWith(
-        'changelog-github-notes@v2',
+        'changelog-github-notes@v3',
         'react/react-native::1.0.0:',
       );
     });
@@ -926,7 +928,94 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
     });
   });
 
+  it('keeps fixture references tied to their sources in grouped PR notes', async () => {
+    // https://github.com/RenoTooth/renovate-issue-19503-fixtures
+    const upgrades: BranchUpgradeConfig[] = [];
+    for (const [type, baseUrl, repository, body] of [
+      ['github', 'https://github.com/', 'sindresorhus/ky', 'Fix #533'],
+      [
+        'gitlab',
+        'https://gitlab.com/',
+        'gitlab-ci-utils/gitlab-ci-env',
+        'Fix #67 and #66',
+      ],
+    ] as const) {
+      const source = partial<ChangeLogSource>({
+        getReleaseList: vi
+          .fn()
+          .mockResolvedValue([
+            { tag: '1.0.0', body, url: baseUrl, notesSourceUrl: baseUrl },
+          ]),
+      });
+      const notes = await getReleaseNotesRaw(
+        { ...githubProject, type, baseUrl, repository },
+        partial<ChangeLogRelease>({ version: '1.0.0' }),
+        partial<BranchUpgradeConfig>(),
+        source,
+      );
+      upgrades.push(
+        partial<BranchUpgradeConfig>({
+          depName: repository,
+          repoName: repository,
+          hasReleaseNotes: true,
+          releases: [{ version: '1.0.0', releaseNotes: notes! }],
+        }),
+      );
+    }
+    const body = getChangelogs(
+      partial<BranchConfig>({ hasReleaseNotes: true, upgrades }),
+    );
+    expect(body).toContain('https://github.com/sindresorhus/ky/issues/533');
+    expect(body).toContain('Fix #&#8203;67 and #&#8203;66');
+    expect(body).not.toContain('/gitlab-ci-utils/gitlab-ci-env/issues/');
+  });
+
   describe('getReleaseNotes()', () => {
+    it.each([
+      ['gitlab', 'https://gitlab.com/'],
+      ['gitlab', 'https://code.example.org/'],
+      ['gitlab', 'https://gitlab.example.org/'],
+      ['github', 'https://unknown.example.org/'],
+      ['gitlab', 'https://github.example.org/'],
+      ['gitlab', 'javascript:alert(1)'],
+      ['github', 'https://github.com@unknown.example.org/'],
+      ['github', 'javascript:alert(1)'],
+    ] as const)('preserves references from %s at %s', async (type, baseUrl) => {
+      const body =
+        '* Fix #123 and !123; `#124`; \\#125.\n\n```text\n#126 !126\n```\n\n[#127](https://example.org/issues/127)';
+      const project = {
+        ...gitlabProject,
+        type,
+        baseUrl,
+        repository: 'group/sub/project',
+      };
+      const source = partial<ChangeLogSource>({
+        getReleaseList: vi.fn().mockResolvedValue([
+          {
+            tag: '1.0.0',
+            body,
+            url: `${baseUrl}releases/1.0.0`,
+            notesSourceUrl: baseUrl,
+          },
+        ]),
+      });
+      const result = await getReleaseNotesRaw(
+        project,
+        partial<ChangeLogRelease>({ version: '1.0.0' }),
+        partial<BranchUpgradeConfig>(),
+        source,
+      );
+      expect(result?.body).toBe(body);
+      const repeated = await getReleaseNotesRaw(
+        project,
+        partial<ChangeLogRelease>({ version: '1.0.0' }),
+        partial<BranchUpgradeConfig>(),
+        source,
+      );
+      expect(repeated?.body).toBe(body);
+      expect(source.getReleaseList).toHaveBeenCalledTimes(2);
+    });
+
     it('should return null for release notes without body and name', async () => {
       githubReleasesMock.mockResolvedValueOnce([
         {
@@ -1950,6 +2039,33 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
   });
 
   describe('getReleaseNotesMd()', () => {
+    it.each(['https://gitlab.com/', 'https://code.example.org/'])(
+      'preserves Markdown from %s',
+      async (baseUrl) => {
+        const body =
+          '* Fix #123 and !123 with [details](https://example.org/#123).\n\n    #124\n\n`!125`';
+        const source = partial<ChangeLogSource>({
+          getReleaseNotesMd: vi.fn().mockResolvedValue({
+            changelogFile: 'CHANGELOG.md',
+            changelogMd: `## 1.0.0\n\n${body}\n\n## 0.9.0\n\nOld`,
+          }),
+          getNotesSourceUrl: vi.fn().mockReturnValue(baseUrl),
+          getReleaseNotesMdAnchorUrl: vi.fn().mockReturnValue(baseUrl),
+        });
+        const result = await getReleaseNotesMdRaw(
+          {
+            ...gitlabProject,
+            baseUrl,
+            apiBaseUrl: baseUrl,
+            repository: 'group/sub/project',
+          },
+          partial<ChangeLogRelease>({ version: '1.0.0' }),
+          source,
+        );
+        expect(result?.body).toBe(body);
+      },
+    );
+
     it('handles not found', async () => {
       httpMock.scope('https://api.github.com').get('/repos/chalk').reply(404);
       const res = await getReleaseNotesMd(
@@ -2160,7 +2276,7 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
       );
       expect(res?.body).toContain('- Add GitLab branding to the left-menu,');
       expect(res?.body).toEndWith(
-        '- Thanks to [@biesiad](https://gitlab.com/biesiad) for the contribution\n',
+        '  - Thanks to [@biesiad](https://gitlab.com/biesiad) for the contribution',
       );
       // the neighbouring 20.26.1 and 20.25.0 sections must not leak in
       expect(res?.body).not.toContain(
@@ -2205,7 +2321,7 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
       );
       expect(res?.body).toContain('- Add GitLab branding to the left-menu,');
       expect(res?.body).toEndWith(
-        '- Thanks to [@biesiad](https://gitlab.com/biesiad) for the contribution\n',
+        '  - Thanks to [@biesiad](https://gitlab.com/biesiad) for the contribution',
       );
       // the neighbouring 20.26.1 and 20.25.0 sections must not leak in
       expect(res?.body).not.toContain(
@@ -2473,13 +2589,13 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
         });
 
         expect(res?.body).toStartWith(
-          '- add new auth, fix accept header and base path in mock\n',
+          '* add new auth, fix accept header and base path in mock\n\n',
         );
         expect(res?.body).toContain('Closes ADAPT-207');
         expect(res?.body).toContain(
           'See merge request itentialopensource/adapter-utils!177',
         );
-        expect(res?.body).toEndWith('***\n');
+        expect(res?.body).toEndWith('---');
         // the neighbouring 4.32.3 section must not leak in
         expect(res?.body).not.toContain('ADAPT-198');
         expect(res?.body).not.toContain(
@@ -2581,13 +2697,13 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
         });
 
         expect(res?.body).toStartWith(
-          '- add new auth, fix accept header and base path in mock\n',
+          '* add new auth, fix accept header and base path in mock\n\n',
         );
         expect(res?.body).toContain('Closes ADAPT-207');
         expect(res?.body).toContain(
           'See merge request itentialopensource/adapter-utils!177',
         );
-        expect(res?.body).toEndWith('***\n');
+        expect(res?.body).toEndWith('---');
         // the neighbouring 4.32.3 section must not leak in
         expect(res?.body).not.toContain('ADAPT-198');
         expect(res?.body).not.toContain(

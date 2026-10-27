@@ -246,7 +246,7 @@ async function releaseNotesResult(
   if (!releaseMatch) {
     return null;
   }
-  const { baseUrl, repository } = project;
+  const { baseUrl, repository, type } = project;
   const releaseNotes: ChangeLogNotes = releaseMatch;
   if (detectPlatform(baseUrl) === 'gitlab') {
     releaseNotes.url = `${baseUrl}${repository}/tags/${releaseMatch.tag!}`;
@@ -262,7 +262,7 @@ async function releaseNotesResult(
   releaseNotes.name = massageName(releaseNotes.name, releaseNotes.tag);
   if (releaseNotes.body.length || releaseNotes.name?.length) {
     try {
-      if (baseUrl !== 'https://gitlab.com/') {
+      if (type === 'github' && detectPlatform(baseUrl) === 'github') {
         releaseNotes.body = await linkify(releaseNotes.body, {
           repository: `${baseUrl}${repository}`,
         });
@@ -489,7 +489,7 @@ export async function addReleaseNotes(
     };
 
     const { repository, sourceDirectory, type: projectType } = input.project;
-    const cacheNamespace: PackageCacheNamespace = `changelog-${projectType}-notes@v2`;
+    const cacheNamespace: PackageCacheNamespace = `changelog-${projectType}-notes@v3`;
 
     const shouldTruncateToPlatformLimit = config.fetchChangeLogs === 'pr';
     const maxBodyLength = shouldTruncateToPlatformLimit
@@ -576,11 +576,15 @@ export function shouldSkipChangelogMd(repository: string): boolean {
 }
 
 async function linkifyBody(
-  { baseUrl, repository }: ChangeLogProject,
+  { baseUrl, repository, type }: ChangeLogProject,
   bodyStr: string,
 ): Promise<string> {
   const body = massageBody(bodyStr, baseUrl);
-  if (body?.length) {
+  if (
+    body?.length &&
+    type === 'github' &&
+    detectPlatform(baseUrl) === 'github'
+  ) {
     try {
       return await linkify(body, {
         repository: `${baseUrl}${repository}`,
