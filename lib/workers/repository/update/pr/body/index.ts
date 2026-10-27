@@ -3,6 +3,7 @@ import { PLATFORM_FAMILIES } from '../../../../../constants/index.ts';
 import type { PrDebugData } from '../../../../../modules/platform/index.ts';
 import { platform } from '../../../../../modules/platform/index.ts';
 import { detectPlatform } from '../../../../../util/common.ts';
+import { transformMarkdownText } from '../../../../../util/markdown.ts';
 import { regEx } from '../../../../../util/regex.ts';
 import { toBase64 } from '../../../../../util/string.ts';
 import * as template from '../../../../../util/template/index.ts';
@@ -126,7 +127,9 @@ export function getPrBody(
     const prBodyTemplate = branchConfig.prBodyTemplate;
     prBody = template.compile(prBodyTemplate, content, false);
     prBody = prBody.trim();
-    prBody = prBody.replace(regEx(/\n\n\n+/g), '\n\n');
+    prBody = transformMarkdownText(prBody, (text) =>
+      text.replace(regEx(/\n\n\n+/g), '\n\n'),
+    );
     const prDebugData64 = toBase64(JSON.stringify(prBodyConfig.debugData));
     prBody += `\n<!--renovate-debug:${prDebugData64}-->\n`;
     prBody = platform.massageMarkdown(prBody, config.rebaseLabel);

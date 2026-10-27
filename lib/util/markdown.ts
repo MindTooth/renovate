@@ -1,3 +1,4 @@
+import type { Nodes } from 'mdast';
 import { remark } from 'remark';
 import gfm from 'remark-gfm';
 import type { Options as RemarkGithubOptions } from 'remark-github';
@@ -5,7 +6,72 @@ import github from 'remark-github';
 import { regEx } from './regex.ts';
 
 // Generic replacements/link-breakers
-export function sanitizeMarkdown(markdown: string): string {
+export function sanitizeMarkdown(
+  markdown: string,
+  preserveFormatting = false,
+): string {
+  return preserveFormatting
+    ? transformMarkdownText(markdown, sanitizeMarkdownText)
+    : sanitizeMarkdownText(markdown);
+}
+
+/** Transform surrounding Markdown while preserving links, code and escapes. */
+export function transformMarkdownText(
+  content: string,
+  transform: (text: string) => string,
+): string {
+  const ranges: [number, number][] = [];
+  function visit(node: Nodes): void {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (start !== undefined && end !== undefined) {
+      if (
+        [
+          'code',
+          'inlineCode',
+          'link',
+          'linkReference',
+          'definition',
+          'html',
+        ].includes(node.type)
+      ) {
+        ranges.push([start, end]);
+        return;
+      }
+      if (node.type === 'text') {
+        const raw = content.slice(start, end);
+        for (const match of raw.matchAll(regEx(/\\[\s\S]/g))) {
+          ranges.push([
+            start + match.index,
+            start + match.index + match[0].length,
+          ]);
+        }
+      }
+    }
+    if ('children' in node) {
+      node.children.forEach(visit);
+    }
+  }
+  visit(remark().use(gfm).parse(content));
+  let prefix = 'RENOVATE_PRESERVED_MARKDOWN_';
+  while (content.includes(prefix)) {
+    prefix += '_';
+  }
+  let protectedContent = content;
+  for (let index = ranges.length - 1; index >= 0; index--) {
+    const [start, end] = ranges[index];
+    protectedContent = `${protectedContent.slice(0, start)}${prefix}${index}_${protectedContent.slice(end)}`;
+  }
+  let result = transform(protectedContent);
+  for (const [index, [start, end]] of ranges.entries()) {
+    result = result.replace(`${prefix}${index}_`, () =>
+      content.slice(start, end),
+    );
+  }
+  return result;
+}
+
+function sanitizeMarkdownText(markdown: string): string {
   let res = markdown;
   // Put a zero width space after every # followed by a digit
   res = res.replace(

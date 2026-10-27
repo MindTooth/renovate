@@ -1,3 +1,4 @@
+import { isKnownGithubUrl } from '../../../../../util/common.ts';
 import { unemojify } from '../../../../../util/emoji.ts';
 import { sanitizeMarkdown } from '../../../../../util/markdown.ts';
 import { regEx } from '../../../../../util/regex.ts';
@@ -22,7 +23,16 @@ export function getChangelogs(config: BranchConfig): string {
 
   releaseNotes += `\n\n---\n\n${template.compile(releaseNotesHbs, config, false)}\n\n`;
   releaseNotes = releaseNotes.replace(regEx(/### \[`vv/g), '### [`v');
-  releaseNotes = sanitizeMarkdown(releaseNotes);
+  const preserveFormatting = config.upgrades.some((upgrade) =>
+    upgrade.releases?.some(
+      (release) =>
+        release.releaseNotes &&
+        !isKnownGithubUrl(
+          release.releaseNotes.notesSourceUrl || release.releaseNotes.url,
+        ),
+    ),
+  );
+  releaseNotes = sanitizeMarkdown(releaseNotes, preserveFormatting);
   releaseNotes = unemojify(releaseNotes);
 
   return releaseNotes;

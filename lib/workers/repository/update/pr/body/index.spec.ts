@@ -50,6 +50,34 @@ describe('workers/repository/update/pr/body/index', () => {
       table.getPrUpdatesTable.mockReturnValueOnce('getPrUpdatesTable');
     });
 
+    it('preserves fenced release-note whitespace through final rendering', () => {
+      const markdown = '```text\n#123\n\n\n!123\n```\n\n\\#124';
+      template.compile.mockReturnValueOnce(markdown);
+      platform.massageMarkdown.mockImplementationOnce((body) => body);
+      const result = getPrBody(
+        {
+          manager: 'npm',
+          branchName: 'renovate/test',
+          baseBranch: 'main',
+          upgrades: [],
+          prBodyTemplate: '{{{changelogs}}}',
+        },
+        {
+          debugData: {
+            updatedInVer: '1.0.0',
+            createdInVer: '1.0.0',
+            targetBranch: 'main',
+          },
+        },
+        {},
+      );
+      expect(result).toStartWith(markdown);
+      expect(platform.massageMarkdown).toHaveBeenCalledWith(
+        expect.stringContaining(markdown),
+        undefined,
+      );
+    });
+
     it('handles empty template', () => {
       const res = getPrBody(
         {

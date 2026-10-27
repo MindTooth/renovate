@@ -3,7 +3,12 @@ import { logger } from '~test/util.ts';
 import { GlobalConfig } from '../config/global.ts';
 import { InheritConfig } from '../config/inherit.ts';
 import { PLATFORM_FAMILIES } from '../constants/index.ts';
-import { detectPlatform, getInheritedOrGlobal, parseJson } from './common.ts';
+import {
+  detectPlatform,
+  getInheritedOrGlobal,
+  isKnownGithubUrl,
+  parseJson,
+} from './common.ts';
 import * as hostRules from './host-rules.ts';
 
 const validJsonString = `
@@ -305,5 +310,31 @@ describe('util/common', () => {
         expect(getInheritedOrGlobal('onboardingAutoCloseAge')).toBe(10);
       });
     });
+  });
+});
+
+describe('util/common', () => {
+  it.each([
+    ['https://github.com/team/project', true],
+    ['https://api.github.com/repos/team/project/releases', true],
+    ['https://github.com.attacker.example/team/project', false],
+    ['not a URL', false],
+    ['javascript:alert(1)', false],
+    ['https://user:password@github.com/team/project', false],
+    ['https://code.example.org/team/project', false],
+  ])('classifies %s using explicit evidence', (url, expected) => {
+    expect(isKnownGithubUrl(url)).toBe(expected);
+  });
+  it('honors the full URL of a path-scoped GitHub host rule', () => {
+    hostRules.add({
+      hostType: 'github',
+      matchHost: 'https://code.example.org/team/',
+    });
+    expect(
+      isKnownGithubUrl('https://code.example.org/team/project'),
+    ).toBeTrue();
+    expect(
+      isKnownGithubUrl('https://code.example.org/other/project'),
+    ).toBeFalse();
   });
 });

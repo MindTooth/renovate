@@ -937,7 +937,7 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
         'gitlab',
         'https://gitlab.com/',
         'gitlab-ci-utils/gitlab-ci-env',
-        'Fix #67 and #66',
+        'Fix #67 and #66\n\n```text\n#123\n\n\n!123\n```\n\n\\#124 [details](https://gitlab.com/project/#123)',
       ],
     ] as const) {
       const source = partial<ChangeLogSource>({
@@ -968,14 +968,46 @@ describe('workers/repository/update/pr/changelog/release-notes', () => {
     expect(body).toContain('https://github.com/sindresorhus/ky/issues/533');
     expect(body).toContain('Fix #&#8203;67 and #&#8203;66');
     expect(body).not.toContain('/gitlab-ci-utils/gitlab-ci-env/issues/');
+    expect(body).toContain('```text\n#123\n\n\n!123\n```');
+    expect(body).toContain('\\#124 [details](https://gitlab.com/project/#123)');
   });
 
   describe('getReleaseNotes()', () => {
+    it('links GitHub notes identified by a path-scoped host rule', async () => {
+      hostRules.add({
+        hostType: 'github',
+        matchHost: 'https://code.example.org/team/',
+      });
+      const source = partial<ChangeLogSource>({
+        getReleaseList: vi.fn().mockResolvedValue([
+          {
+            tag: '1.0.0',
+            body: 'Fix #123',
+            url: 'https://code.example.org/team/project/releases/1.0.0',
+          },
+        ]),
+      });
+      const result = await getReleaseNotesRaw(
+        {
+          ...githubProject,
+          baseUrl: 'https://code.example.org/',
+          sourceUrl: 'https://code.example.org/team/project',
+          repository: 'team/project',
+        },
+        partial<ChangeLogRelease>({ version: '1.0.0' }),
+        partial<BranchUpgradeConfig>(),
+        source,
+      );
+      expect(result?.body).toContain('[#123](');
+    });
+
     it.each([
       ['gitlab', 'https://gitlab.com/'],
       ['gitlab', 'https://code.example.org/'],
       ['gitlab', 'https://gitlab.example.org/'],
       ['github', 'https://unknown.example.org/'],
+      ['github', 'https://github.com.attacker.example/'],
+      ['github', 'https://notgithub.example/'],
       ['gitlab', 'https://github.example.org/'],
       ['gitlab', 'javascript:alert(1)'],
       ['github', 'https://github.com@unknown.example.org/'],

@@ -2,6 +2,15 @@ import { codeBlock } from 'common-tags';
 import { linkify, sanitizeMarkdown } from './markdown.ts';
 
 describe('util/markdown', () => {
+  it('preserves code, escapes and explicit links during sanitization', () => {
+    const input =
+      '```text\n#123\n\n\n!123\n```\n\n\\#123 [#123](https://example.org/#123)';
+    expect(sanitizeMarkdown(input, true)).toBe(input);
+  });
+  it('avoids collisions with preserved-region markers', () => {
+    const text = 'RENOVATE_PRESERVED_MARKDOWN_ `#123`';
+    expect(sanitizeMarkdown(text, true)).toBe(text);
+  });
   describe('.linkify', () => {
     const before = codeBlock`
       Some references:

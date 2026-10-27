@@ -13,7 +13,10 @@ import * as memCache from '../../../../../util/cache/memory/index.ts';
 import * as packageCache from '../../../../../util/cache/package/index.ts';
 import { buildCacheKey } from '../../../../../util/cache/package/key.ts';
 import type { PackageCacheNamespace } from '../../../../../util/cache/package/types.ts';
-import { detectPlatform } from '../../../../../util/common.ts';
+import {
+  detectPlatform,
+  isKnownGithubUrl,
+} from '../../../../../util/common.ts';
 import { linkify } from '../../../../../util/markdown.ts';
 import { newlineRegex, regEx } from '../../../../../util/regex.ts';
 import { coerceString } from '../../../../../util/string.ts';
@@ -239,6 +242,15 @@ function getNamePatterns(
   return [...names].map((name) => RegExp.escape(name));
 }
 
+function isGithubSource(project: ChangeLogProject): boolean {
+  return (
+    project.type === 'github' &&
+    isKnownGithubUrl(
+      project.sourceUrl || `${project.baseUrl}${project.repository}`,
+    )
+  );
+}
+
 async function releaseNotesResult(
   releaseMatch: ChangeLogNotes | undefined,
   project: ChangeLogProject,
@@ -246,7 +258,7 @@ async function releaseNotesResult(
   if (!releaseMatch) {
     return null;
   }
-  const { baseUrl, repository, type } = project;
+  const { baseUrl, repository } = project;
   const releaseNotes: ChangeLogNotes = releaseMatch;
   if (detectPlatform(baseUrl) === 'gitlab') {
     releaseNotes.url = `${baseUrl}${repository}/tags/${releaseMatch.tag!}`;
@@ -262,7 +274,7 @@ async function releaseNotesResult(
   releaseNotes.name = massageName(releaseNotes.name, releaseNotes.tag);
   if (releaseNotes.body.length || releaseNotes.name?.length) {
     try {
-      if (type === 'github' && detectPlatform(baseUrl) === 'github') {
+      if (isGithubSource(project)) {
         releaseNotes.body = await linkify(releaseNotes.body, {
           repository: `${baseUrl}${repository}`,
         });
@@ -576,15 +588,12 @@ export function shouldSkipChangelogMd(repository: string): boolean {
 }
 
 async function linkifyBody(
-  { baseUrl, repository, type }: ChangeLogProject,
+  project: ChangeLogProject,
   bodyStr: string,
 ): Promise<string> {
+  const { baseUrl, repository } = project;
   const body = massageBody(bodyStr, baseUrl);
-  if (
-    body?.length &&
-    type === 'github' &&
-    detectPlatform(baseUrl) === 'github'
-  ) {
+  if (body?.length && isGithubSource(project)) {
     try {
       return await linkify(body, {
         repository: `${baseUrl}${repository}`,

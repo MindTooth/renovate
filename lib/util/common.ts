@@ -71,6 +71,26 @@ export function detectPlatform(url: string): PlatformFamilyId | null {
   return null;
 }
 
+/** Identify GitHub URLs using known hosts or explicit host rules. */
+export function isKnownGithubUrl(url: string): boolean {
+  const parsed = parseUrl(url);
+  if (
+    !parsed ||
+    !['https:', 'http:'].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password
+  ) {
+    return false;
+  }
+  const family = PLATFORM_FAMILIES.github;
+  const hostType = hostRules.hostType({ url });
+  return (
+    family.knownHosts.includes(parsed.hostname) ||
+    parsed.hostname === 'api.github.com' ||
+    (hostType !== null && family.apiUsingHostTypes.includes(hostType))
+  );
+}
+
 export function noLeadingAtSymbol(input: string): string {
   return input.startsWith('@') ? input.slice(1) : input;
 }
